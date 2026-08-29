@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import type { Peer, MediaConnection } from 'peerjs';
 import {
@@ -111,127 +111,136 @@ export default function ReceiverPage() {
     };
   }, [connectionState]);
 
-  // Initialize Receiver Peer listener
-  const initReceiverPeer = useCallback(async (code: string) => {
-    if (peerRef.current) {
-      peerRef.current.destroy();
-      peerRef.current = null;
-    }
-
-    const cleanCode = code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
-    const targetPeerId = `voiceguard-sih-room-${cleanCode}`;
-
-    try {
-      const { default: Peer } = await import('peerjs');
-      const peer = new Peer(targetPeerId);
-      peerRef.current = peer;
-
-      peer.on('open', () => {
-        setConnectionState('listening');
-      });
-
-      peer.on('call', (call: MediaConnection) => {
-        setConnectionState('incoming');
-        setCallerPeerId(call.peer);
-        activeCallRef.current = call;
-
-        // Answer call and attach remote audio stream
-        call.answer();
-
-        call.on('stream', async (remoteStream: MediaStream) => {
-          setConnectionState('connected');
-          setCallDuration(0);
-
-          // Play remote stream through laptop speakers
-          if (remoteAudioRef.current) {
-            remoteAudioRef.current.srcObject = remoteStream;
-            void remoteAudioRef.current.play();
-          }
-
-          // Feed into SAME StreamingDetector as other modes!
-          if (detectorRef.current) {
-            await detectorRef.current.stop();
-          }
-
-          const detector = new StreamingDetector();
-          detectorRef.current = detector;
-
-          if (scorerRef.current) {
-            scorerRef.current.reset('WEBRTC-INBOUND-01');
-          }
-
-          detector.onScore((windowResult: WindowRiskResult) => {
-            if (!scorerRef.current) return;
-            const evalResult: SmoothedRiskEvaluation = scorerRef.current.evaluate(
-              windowResult.riskScore,
-              windowResult.windowStartMs
-            );
-
-            setSmoothedScore(evalResult.smoothedScore);
-            setConfidence(windowResult.confidence);
-            setLabel(windowResult.label);
-            setLatencyMs(windowResult.inferenceLatencyMs);
-            setActionLabel(evalResult.actionLabel);
-
-            const sec = Math.floor(windowResult.windowStartMs / 1000);
-            const mins = Math.floor(sec / 60).toString().padStart(2, '0');
-            const secs = (sec % 60).toString().padStart(2, '0');
-
-            setTimelineData((prev) => {
-              const next = [
-                ...prev,
-                {
-                  time: `${mins}:${secs}`,
-                  second: sec,
-                  smoothedScore: evalResult.smoothedScore,
-                  rawScore: windowResult.riskScore,
-                },
-              ];
-              return next.slice(-30);
-            });
-          });
-
-          await detector.start(remoteStream);
-        });
-
-        call.on('close', () => {
-          setConnectionState('ended');
-          if (detectorRef.current) {
-            void detectorRef.current.stop();
-          }
-        });
-
-        call.on('error', () => {
-          setConnectionState('error');
-        });
-      });
-
-      peer.on('error', (err: unknown) => {
-        const peerErr = err as { type?: string };
-        if (peerErr?.type === 'unavailable-id') {
-          // Room code in use, generate unique suffix
-          const fallbackCode = `${cleanCode}-${Math.floor(10 + Math.random() * 90)}`;
-          setRoomCode(fallbackCode);
-        } else {
-          setConnectionState('error');
-        }
-      });
-    } catch {
-      setConnectionState('error');
-    }
-  }, []);
-
+  // Initialize Receiver Peer listener inside useEffect
   useEffect(() => {
-    void initReceiverPeer(roomCode);
-    return () => {
+    let isCleanedUp = false;
+
+    const setupPeer = async () => {
       if (peerRef.current) {
         peerRef.current.destroy();
+        peerRef.current = null;
+      }
+
+      const cleanCode = roomCode.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+      const targetPeerId = `voiceguard-sih-room-${cleanCode}`;
+
+      try {
+        const { default: Peer } = await import('peerjs');
+        if (isCleanedUp) return;
+        const peer = new Peer(targetPeerId);
+        peerRef.current = peer;
+
+        peer.on('open', () => {
+          if (!isCleanedUp) setConnectionState('listening');
+        });
+
+        peer.on('call', (call: MediaConnection) => {
+          if (isCleanedUp) return;
+          setConnectionState('incoming');
+          setCallerPeerId(call.peer);
+          activeCallRef.current = call;
+
+          // Answer call and attach remote audio stream
+          call.answer();
+
+          call.on('stream', async (remoteStream: MediaStream) => {
+            if (isCleanedUp) return;
+            setConnectionState('connected');
+            setCallDuration(0);
+
+            // Play remote stream through laptop speakers
+            if (remoteAudioRef.current) {
+              remoteAudioRef.current.srcObject = remoteStream;
+              void remoteAudioRef.current.play();
+            }
+
+            // Feed into SAME StreamingDetector as other modes!
+            if (detectorRef.current) {
+              await detectorRef.current.stop();
+            }
+
+            const detector = new StreamingDetector();
+            detectorRef.current = detector;
+
+            if (scorerRef.current) {
+              scorerRef.current.reset('WEBRTC-INBOUND-01');
+            }
+
+            detector.onScore((windowResult: WindowRiskResult) => {
+              if (isCleanedUp || !scorerRef.current) return;
+              const evalResult: SmoothedRiskEvaluation = scorerRef.current.evaluate(
+                windowResult.riskScore,
+                windowResult.windowStartMs
+              );
+
+              setSmoothedScore(evalResult.smoothedScore);
+              setConfidence(windowResult.confidence);
+              setLabel(windowResult.label);
+              setLatencyMs(windowResult.inferenceLatencyMs);
+              setActionLabel(evalResult.actionLabel);
+
+              const sec = Math.floor(windowResult.windowStartMs / 1000);
+              const mins = Math.floor(sec / 60).toString().padStart(2, '0');
+              const secs = (sec % 60).toString().padStart(2, '0');
+
+              setTimelineData((prev) => {
+                const next = [
+                  ...prev,
+                  {
+                    time: `${mins}:${secs}`,
+                    second: sec,
+                    smoothedScore: evalResult.smoothedScore,
+                    rawScore: windowResult.riskScore,
+                  },
+                ];
+                return next.slice(-30);
+              });
+            });
+
+            await detector.start(remoteStream);
+          });
+
+          call.on('close', () => {
+            if (!isCleanedUp) {
+              setConnectionState('ended');
+              if (detectorRef.current) {
+                void detectorRef.current.stop();
+              }
+            }
+          });
+
+          call.on('error', () => {
+            if (!isCleanedUp) setConnectionState('error');
+          });
+        });
+
+        peer.on('error', (err: unknown) => {
+          const peerErr = err as { type?: string };
+          if (peerErr?.type === 'unavailable-id') {
+            const fallbackCode = `${cleanCode}-${Math.floor(10 + Math.random() * 90)}`;
+            if (!isCleanedUp) setRoomCode(fallbackCode);
+          } else {
+            if (!isCleanedUp) setConnectionState('error');
+          }
+        });
+      } catch {
+        if (!isCleanedUp) setConnectionState('error');
+      }
+    };
+
+    void setupPeer();
+
+    return () => {
+      isCleanedUp = true;
+      if (peerRef.current) {
+        peerRef.current.destroy();
+        peerRef.current = null;
       }
       if (detectorRef.current) {
         void detectorRef.current.stop();
       }
     };
-  }, [initReceiverPeer, roomCode]);
+  }, [roomCode]);
 
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomCode);

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import type { Peer, MediaConnection } from 'peerjs';
 import {
@@ -57,12 +57,46 @@ export default function CallerPage() {
     return () => clearInterval(interval);
   }, [callStatus]);
 
+  const hangUp = useCallback(async () => {
+    if (activeCallRef.current) {
+      activeCallRef.current.close();
+      activeCallRef.current = null;
+    }
+
+    if (peerRef.current) {
+      peerRef.current.destroy();
+      peerRef.current = null;
+    }
+
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach((t) => t.stop());
+      activeStreamRef.current = null;
+    }
+
+    if (audioElementRef.current) {
+      audioElementRef.current.pause();
+      audioElementRef.current = null;
+    }
+
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try {
+        await audioContextRef.current.close();
+      } catch {
+        // ignore
+      }
+      audioContextRef.current = null;
+    }
+
+    setCallStatus('idle');
+    setStatusMessage('Call disconnected.');
+  }, []);
+
   // Clean up on unmount
   useEffect(() => {
     return () => {
       void hangUp();
     };
-  }, []);
+  }, [hangUp]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -171,40 +205,6 @@ export default function CallerPage() {
       setCallStatus('error');
       setStatusMessage(`Error: ${msg}`);
     }
-  };
-
-  const hangUp = async () => {
-    if (activeCallRef.current) {
-      activeCallRef.current.close();
-      activeCallRef.current = null;
-    }
-
-    if (peerRef.current) {
-      peerRef.current.destroy();
-      peerRef.current = null;
-    }
-
-    if (activeStreamRef.current) {
-      activeStreamRef.current.getTracks().forEach((t) => t.stop());
-      activeStreamRef.current = null;
-    }
-
-    if (audioElementRef.current) {
-      audioElementRef.current.pause();
-      audioElementRef.current = null;
-    }
-
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      try {
-        await audioContextRef.current.close();
-      } catch {
-        // ignore
-      }
-      audioContextRef.current = null;
-    }
-
-    setCallStatus('idle');
-    setStatusMessage('Call disconnected.');
   };
 
   const toggleMute = () => {
