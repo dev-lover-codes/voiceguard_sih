@@ -216,4 +216,3 @@ VoiceGuard SIH operates on strict **Privacy-by-Design** principles:
     │                              │ • Login: analyst@voiceguard.bank        │        
     │                              │ • Watch live WebSocket logs & escalate. │        
     └──────────────────────────────┴─────────────────────────────────────────┘        
-  ──────
