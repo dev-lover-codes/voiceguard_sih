@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">VoiceGuard SIH</string>
+    <string name="title_activity_main">VoiceGuard SIH</string>
+    <string name="package_name">com.voiceguard.sih</string>
+    <string name="custom_url_scheme">com.voiceguard.sih</string>
+</resources>

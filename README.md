@@ -91,6 +91,33 @@ npm run build
 
 ---
 
+## 📱 Android Native APK (Capacitor)
+
+VoiceGuard SIH includes a native Android wrapper using Capacitor that points to the live Vercel deployment (`https://voiceguard-sih.vercel.app`), granting full hardware microphone access for on-device AudioWorklet inference and WebRTC two-device calling.
+
+### Build Android APK
+
+```bash
+# 1. Sync Capacitor configuration
+npm run cap:sync
+
+# 2. Build Debug APK using Gradle
+npm run cap:build:android
+# Or open in Android Studio:
+npm run cap:open:android
+```
+
+> **APK Output Location:** `android/app/build/outputs/apk/debug/app-debug.apk`
+
+### Sideloading Instructions for Judges
+1. Transfer `app-debug.apk` to an Android device (via WhatsApp, Google Drive, USB, or ADB).
+2. Tap the APK file to install.
+3. When prompted, toggle **"Allow from this source"** (enable unknown sources in Settings).
+4. Launch the app and grant microphone permissions when prompted.
+5. For full testing walkthroughs, consult [**`GUIDE.md`**](GUIDE.md).
+
+---
+
 ## 🔒 Supabase Database Schema
 
 ```bash
@@ -99,3 +126,4 @@ supabase db push
 ```
 
 Schema file located at [`supabase/migrations/20260829000000_voiceguard_schema.sql`](supabase/migrations/20260829000000_voiceguard_schema.sql).
+
