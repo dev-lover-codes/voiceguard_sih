@@ -1,4 +1,4 @@
-import { RiskLevel, RiskResult, ConfidenceScores, CallMetadata } from '@/types';
+import { RiskLevel, RiskResult, ConfidenceScores, CallMetadata, AlertEvent } from '@/types';
 
 // High-risk scam keywords and social engineering patterns
 export const HIGH_RISK_KEYWORDS = [
@@ -13,6 +13,148 @@ export const SUSPICIOUS_KEYWORDS = [
   'security alert', 'manager approval', 'gift card', 'refund processed',
   'unauthorized transaction', 'suspicious login'
 ];
+
+export interface RiskScoringConfig {
+  alpha?: number;                // EMA smoothing factor (default: 0.35)
+  highRiskThreshold?: number;    // High-risk boundary (default: 80)
+  suspiciousThreshold?: number;  // Suspicious boundary (default: 50)
+}
+
+export type RiskAction = 'block_and_escalate' | 'secondary_verification' | 'proceed';
+
+export interface SmoothedRiskEvaluation {
+  rawScore: number;
+  smoothedScore: number;
+  riskLevel: RiskLevel;
+  action: RiskAction;
+  actionLabel: string;
+  isAlertTriggered: boolean;
+  alertEvent?: AlertEvent;
+}
+
+/**
+ * StreamingRiskScorer: Manages Exponential Moving Average (EMA) smoothing across consecutive
+ * audio window scores and fires mid-stream alerts the FIRST moment a threshold boundary is crossed.
+ */
+export class StreamingRiskScorer {
+  private config: Required<RiskScoringConfig>;
+  private smoothedScore: number | null = null;
+  private currentTier: 'NONE' | 'LOW' | 'SUSPICIOUS' | 'HIGH_RISK' = 'NONE';
+  private alertListeners: Set<(alert: AlertEvent) => void> = new Set();
+  private callId: string;
+
+  constructor(callId: string = 'LIVE-STREAM-01', config?: RiskScoringConfig) {
+    this.callId = callId;
+    this.config = {
+      alpha: config?.alpha ?? 0.35,
+      highRiskThreshold: config?.highRiskThreshold ?? 80,
+      suspiciousThreshold: config?.suspiciousThreshold ?? 50,
+    };
+  }
+
+  public reset(callId?: string): void {
+    if (callId) this.callId = callId;
+    this.smoothedScore = null;
+    this.currentTier = 'NONE';
+  }
+
+  public updateConfig(config: Partial<RiskScoringConfig>): void {
+    if (config.alpha !== undefined) this.config.alpha = config.alpha;
+    if (config.highRiskThreshold !== undefined) this.config.highRiskThreshold = config.highRiskThreshold;
+    if (config.suspiciousThreshold !== undefined) this.config.suspiciousThreshold = config.suspiciousThreshold;
+  }
+
+  public onAlert(callback: (alert: AlertEvent) => void): () => void {
+    this.alertListeners.add(callback);
+    return () => {
+      this.alertListeners.delete(callback);
+    };
+  }
+
+  public getSmoothedScore(): number {
+    return this.smoothedScore !== null ? Math.round(this.smoothedScore * 10) / 10 : 0;
+  }
+
+  /**
+   * Evaluates a new raw score from a window, updates EMA, checks thresholds,
+   * and triggers an alert the FIRST moment a threshold is crossed mid-stream.
+   */
+  public evaluate(newScore: number, windowStartMs: number = 0): SmoothedRiskEvaluation {
+    const alpha = this.config.alpha;
+    if (this.smoothedScore === null) {
+      this.smoothedScore = newScore;
+    } else {
+      // Exponential Moving Average (EMA)
+      this.smoothedScore = alpha * newScore + (1 - alpha) * this.smoothedScore;
+    }
+
+    const roundedSmoothed = Math.round(this.smoothedScore * 10) / 10;
+
+    let riskLevel: RiskLevel = 'VERIFIED';
+    let action: RiskAction = 'proceed';
+    let actionLabel = 'likely human, proceed';
+    let newTier: 'LOW' | 'SUSPICIOUS' | 'HIGH_RISK' = 'LOW';
+
+    if (roundedSmoothed >= this.config.highRiskThreshold) {
+      riskLevel = 'HIGH_RISK';
+      action = 'block_and_escalate';
+      actionLabel = 'high-risk, block and escalate';
+      newTier = 'HIGH_RISK';
+    } else if (roundedSmoothed >= this.config.suspiciousThreshold) {
+      riskLevel = 'SUSPICIOUS';
+      action = 'secondary_verification';
+      actionLabel = 'suspicious, request secondary verification';
+      newTier = 'SUSPICIOUS';
+    }
+
+    // Mid-stream alert trigger: fires FIRST moment a higher threshold is crossed
+    let isAlertTriggered = false;
+    let alertEvent: AlertEvent | undefined;
+
+    const isCrossingUpward =
+      (newTier === 'HIGH_RISK' && this.currentTier !== 'HIGH_RISK') ||
+      (newTier === 'SUSPICIOUS' && this.currentTier === 'LOW') ||
+      (newTier === 'SUSPICIOUS' && this.currentTier === 'NONE');
+
+    if (isCrossingUpward) {
+      isAlertTriggered = true;
+      const snippetSec = Math.floor(windowStartMs / 1000);
+      const mins = Math.floor(snippetSec / 60).toString().padStart(2, '0');
+      const secs = (snippetSec % 60).toString().padStart(2, '0');
+
+      alertEvent = {
+        id: `alt-${Date.now().toString().slice(-5)}`,
+        callId: this.callId,
+        timestamp: new Date().toISOString(),
+        severity: newTier === 'HIGH_RISK' ? 'critical' : 'medium',
+        title:
+          newTier === 'HIGH_RISK'
+            ? 'Critical: Synthetic Deepfake Threshold Crossed'
+            : 'Warning: Suspicious Acoustic Activity Detected',
+        description: `Smoothed risk score reached ${roundedSmoothed}/100. Recommended action: ${actionLabel}.`,
+        riskScore: Math.round(roundedSmoothed),
+        category: 'Synthetic Voice',
+        snippetTime: `${mins}:${secs}`,
+        status: 'active',
+      };
+
+      // Notify alert listeners immediately
+      this.alertListeners.forEach((cb) => cb(alertEvent!));
+    }
+
+    this.currentTier = newTier;
+
+    return {
+      rawScore: newScore,
+      smoothedScore: roundedSmoothed,
+      riskLevel,
+      action,
+      actionLabel,
+      isAlertTriggered,
+      alertEvent,
+    };
+  }
+}
 
 export function evaluateKeywords(transcript: string): { flagged: string[]; urgencyScore: number } {
   const lower = transcript.toLowerCase();

@@ -6,8 +6,8 @@ import { RiskTimeline } from '@/components/RiskTimeline';
 import { ConfidenceBreakdown } from '@/components/ConfidenceBreakdown';
 import { LiveCallMonitor } from '@/components/LiveCallMonitor';
 import { AudioSampleScenario, RiskResult, TimelinePoint } from '@/types';
-import { computeCompositeRisk } from '@/lib/risk-scoring';
-import { onnxInferenceEngine } from '@/lib/onnx-inference';
+import { computeCompositeRisk, StreamingRiskScorer } from '@/lib/risk-scoring';
+import { StreamingDetector } from '@/lib/onnx-inference';
 import {
   Play,
   Pause,
@@ -149,6 +149,7 @@ export default function DemoPage() {
   const [currentSec, setCurrentSec] = useState<number>(0);
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
   const [micSpoofProb, setMicSpoofProb] = useState<number>(14);
+  const [micLatency, setMicLatency] = useState<number>(2.4);
   const [timelineData, setTimelineData] = useState<TimelinePoint[]>([
     {
       time: '00:00',
@@ -161,7 +162,8 @@ export default function DemoPage() {
   ]);
 
   const activeScenario = SCENARIOS.find((s) => s.id === selectedScenarioId) || SCENARIOS[0];
-  const audioContextRef = useRef<AudioContext | null>(null);
+  const detectorRef = useRef<StreamingDetector | null>(null);
+  const scorerRef = useRef<StreamingRiskScorer | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
 
   const handleSelectScenario = (id: string) => {
@@ -169,7 +171,17 @@ export default function DemoPage() {
     setSelectedScenarioId(id);
     setCurrentSec(0);
     setIsPlaying(false);
+    
+    if (detectorRef.current) {
+      void detectorRef.current.stop();
+      detectorRef.current = null;
+    }
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((t) => t.stop());
+      micStreamRef.current = null;
+    }
     setIsMicActive(false);
+
     const initialT = nextScenario.transcripts[0];
     setTimelineData([
       {
@@ -189,7 +201,7 @@ export default function DemoPage() {
         {
           sec: 2,
           speaker: 'Caller' as const,
-          text: 'Listening to live microphone input... Performing real-time ONNX acoustic feature analysis.',
+          text: 'Streaming live microphone via AudioWorklet (pcm-processor.js)... Resampling to 16kHz & evaluating 64.6k sample sliding windows with EMA smoothing (alpha=0.35).',
           riskScore: micSpoofProb,
           spoofScore: micSpoofProb,
           urgencyScore: 5,
@@ -200,7 +212,10 @@ export default function DemoPage() {
   const latestTranscript = visibleTranscripts[visibleTranscripts.length - 1] || activeScenario.transcripts[0];
 
   const currentRisk: RiskResult = isMicActive
-    ? computeCompositeRisk(micSpoofProb, 8, 10, 5)
+    ? {
+        ...computeCompositeRisk(micSpoofProb, 8, 10, 5),
+        latencyMs: micLatency,
+      }
     : computeCompositeRisk(
         latestTranscript.spoofScore,
         latestTranscript.urgencyScore,
@@ -208,7 +223,7 @@ export default function DemoPage() {
         activeScenario.category === 'Legitimate' ? 5 : 60
       );
 
-  // Playback timer ticker
+  // Playback timer ticker for presets
   useEffect(() => {
     if (!isPlaying) return;
 
@@ -240,11 +255,28 @@ export default function DemoPage() {
     return () => clearInterval(timer);
   }, [isPlaying, activeScenario, latestTranscript]);
 
-  // Microphone real-time testing
-  const toggleMicrophone = async () => {
-    if (isMicActive) {
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (detectorRef.current) {
+        void detectorRef.current.stop();
+      }
       if (micStreamRef.current) {
         micStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, []);
+
+  // Real-time AudioWorklet + StreamingDetector microphone testing
+  const toggleMicrophone = async () => {
+    if (isMicActive) {
+      if (detectorRef.current) {
+        await detectorRef.current.stop();
+        detectorRef.current = null;
+      }
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach((t) => t.stop());
+        micStreamRef.current = null;
       }
       setIsMicActive(false);
       return;
@@ -256,27 +288,41 @@ export default function DemoPage() {
       setIsMicActive(true);
       setIsPlaying(false);
 
-      const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const audioCtx = new AudioCtxClass();
-      audioContextRef.current = audioCtx;
-      const source = audioCtx.createMediaStreamSource(stream);
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 2048;
-      source.connect(analyser);
+      const scorer = new StreamingRiskScorer('MIC-LIVE-01', {
+        alpha: 0.35,
+        highRiskThreshold: 80,
+        suspiciousThreshold: 50,
+      });
+      scorerRef.current = scorer;
 
-      const buffer = new Float32Array(analyser.fftSize);
+      const detector = new StreamingDetector();
+      detectorRef.current = detector;
 
-      const micInterval = setInterval(async () => {
-        if (!micStreamRef.current?.active) {
-          clearInterval(micInterval);
-          return;
-        }
-        analyser.getFloatTimeDomainData(buffer);
-        const res = await onnxInferenceEngine.analyzeAudioFrame(buffer);
-        setMicSpoofProb(res.syntheticSpeechProb);
-      }, 500);
-    } catch {
-      alert('Microphone access could not be acquired or is not supported in this browser.');
+      // Handle scores as 64.6k-sample windows complete
+      detector.onScore((windowResult) => {
+        const evalResult = scorer.evaluate(windowResult.riskScore, windowResult.windowStartMs);
+        setMicSpoofProb(evalResult.smoothedScore);
+        setMicLatency(windowResult.inferenceLatencyMs);
+
+        const sec = Math.floor(windowResult.windowStartMs / 1000);
+        setTimelineData((old) => [
+          ...old.slice(-20),
+          {
+            time: `00:${sec.toString().padStart(2, '0')}`,
+            second: sec,
+            riskScore: evalResult.smoothedScore,
+            acousticSpoof: windowResult.riskScore,
+            urgency: 8,
+            threshold: 70,
+          },
+        ]);
+      });
+
+      await detector.start(stream);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown audio error';
+      alert(`Microphone stream error: ${msg}. Please ensure you are using Chrome or Edge.`);
+      setIsMicActive(false);
     }
   };
 
@@ -305,7 +351,7 @@ export default function DemoPage() {
             Live Deepfake & Vishing Call Simulator
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Test pre-recorded synthetic voice attacks or test your own microphone against the ONNX acoustic engine
+            Test pre-recorded synthetic voice attacks or test your own microphone against the AudioWorklet ONNX acoustic engine
           </p>
         </div>
 
@@ -313,7 +359,7 @@ export default function DemoPage() {
         <div className="flex items-center gap-2">
           <div className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono text-cyan-300 flex items-center gap-1.5">
             <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-            <span>MODEL: ONNX-WASM FP32</span>
+            <span>ENGINE: ONNX WASM + WORKLET</span>
           </div>
         </div>
       </div>
@@ -405,7 +451,7 @@ export default function DemoPage() {
             ) : (
               <>
                 <Mic className="w-4 h-4 text-cyan-400" />
-                <span>Test Live Microphone</span>
+                <span>Test Live Microphone (AudioWorklet)</span>
               </>
             )}
           </button>
@@ -419,9 +465,9 @@ export default function DemoPage() {
           <LiveCallMonitor
             metadata={{
               callId: isMicActive ? 'MIC-LIVE-01' : activeScenario.id,
-              callerNumber: isMicActive ? 'Local Microphone Stream' : activeScenario.caller,
-              callerLocation: isMicActive ? 'Client Browser WASM' : 'Inbound Route',
-              telecomCarrier: isMicActive ? 'Web Audio API' : 'SIP Trunk',
+              callerNumber: isMicActive ? 'Local Hardware PCM Stream (AudioWorklet)' : activeScenario.caller,
+              callerLocation: isMicActive ? 'Client Browser AudioWorklet (16kHz Resampled)' : 'Inbound Route',
+              telecomCarrier: isMicActive ? 'Web Audio API / Linear Resampler' : 'SIP Trunk',
               channelType: isMicActive ? 'WebRTC' : 'VoIP',
               startTime: new Date().toISOString(),
               durationSec: currentSec,

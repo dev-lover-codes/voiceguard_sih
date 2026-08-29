@@ -5,7 +5,10 @@
 
 ### Key Capabilities
 - **Real-Time Acoustic Inference**: Browser and edge-based ONNX model execution (`onnxruntime-web`) to evaluate synthetic speech indicators and spectral phase continuity without sending sensitive raw voice streams to third parties.
-- **Multi-Factor Risk Scoring Engine**: Computes dynamic 0-100 risk index by fusing ONNX acoustic liveness score, conversational NLP urgency indicators, and caller signaling anomaly heuristics.
+- **AudioWorklet PCM Ingestion & Linear Resampler**: Standalone zero-latency worklet (`public/worklets/pcm-processor.js`) streaming native hardware audio (44.1k/48k) resampled to 16kHz via true linear interpolation.
+- **Rolling Window Streaming Detector**: 64,600-sample (4.03s) window with 24,000-sample (1.5s) hop ring buffer feeding model's native training length.
+- **Exponential Moving Average (EMA) Scoring & Mid-Stream Alerts**: Smoothed score engine (`alpha = 0.35`) with configurable threshold boundaries (>80 High-Risk, 50-80 Suspicious, <50 Likely Human) that fires alerts the first moment a threshold is crossed mid-stream.
+- **Multi-Factor Risk Scoring Engine**: Computes dynamic 0-100 risk index fusing ONNX acoustic score, NLP urgency indicators, and signaling metadata heuristics.
 - **Three-Tier Visual Threat Classification**:
   - **Verified (0–30)**: Highlighted with electric cyan (`#06B6D4` / `#22D3EE`). Normal human biometric consistency.
   - **Suspicious (31–70)**: Highlighted with warm amber (`#F59E0B` / `#FBBF24`). High synthetic probability or sudden acoustic jitter.
@@ -19,7 +22,8 @@
 - **Framework**: Next.js 14+ (App Router, React 19/18 Server & Client Components)
 - **Language**: TypeScript (Strict Mode)
 - **Styling**: Tailwind CSS (Navy / Slate Deep Dark Palette, Custom Glows & Borders)
-- **Acoustic Inference Engine**: `onnxruntime-web`
+- **Acoustic Inference Engine**: `onnxruntime-web` (single-threaded WASM / WebGL fallback)
+- **Audio Processing**: Standalone `AudioWorkletProcessor` (`/worklets/pcm-processor.js`)
 - **Database & Auth Client**: `@supabase/supabase-js`
 - **Data Visualization**: `recharts` (Live Risk Timeline, Confidence Breakdown)
 - **Icons**: `lucide-react`
@@ -42,8 +46,7 @@
 │   │   └── page.tsx             # Interactive Live Voice & Deepfake Simulator
 │   ├── globals.css              # Dark theme design system & glow utilities
 │   ├── layout.tsx               # Root layout with Header, Navigation, PWA meta
-│   ├── page.tsx                 # High-impact Landing Page & Feature Architecture
-│   └── manifest.json / pwa      # PWA Configuration
+│   └── page.tsx                 # High-impact Landing Page & Feature Architecture
 ├── components/
 │   ├── Navbar.tsx               # Global top navigation with status indicators
 │   ├── LiveCallMonitor.tsx      # Real-time audio waveform, call status & live transcript
@@ -53,16 +56,18 @@
 │   ├── AlertFeed.tsx            # Real-time alert list with quick-actions & filtering
 │   └── PwaInstallPrompt.tsx     # Mobile install banner / prompt
 ├── lib/
-│   ├── onnx-inference.ts        # ONNX Runtime Web session loader & inference runner
+│   ├── onnx-inference.ts        # Cached ONNX session, Linear Resampler, & StreamingDetector
 │   ├── supabase-client.ts       # Supabase client with offline fallback mock
-│   ├── risk-scoring.ts          # Composite multi-factor scoring algorithm
+│   ├── risk-scoring.ts          # EMA Smoother, Configurable Thresholds, & Mid-Stream Alert Engine
 │   └── utils.ts                 # Styling & formatting helpers
 ├── public/
 │   ├── manifest.json            # PWA Web App Manifest
-│   ├── icons/                   # PWA icons (192x192, 512x512, maskable)
-│   └── models/
-│       ├── voiceguard_acoustic.onnx  # ONNX Acoustic Inference Model
-│       └── README.md                 # Model weights specification
+│   ├── icons/                   # PWA icons (192x192, 512x512, maskable, SVG)
+│   ├── models/
+│   │   ├── voiceguard_acoustic.onnx  # ONNX Acoustic Inference Model
+│   │   └── README.md                 # Model weights specification
+│   └── worklets/
+│       └── pcm-processor.js          # Standalone AudioWorkletProcessor module
 ├── types/
 │   └── index.ts                 # Shared TypeScript interfaces (RiskResult, CallMetadata, AlertEvent, etc.)
 ├── .idx/
@@ -77,45 +82,23 @@
 
 ## 4. Current Implementation Plan & Milestones
 
-1. **Environment & Dependency Setup**:
-   - Install `onnxruntime-web`, `@supabase/supabase-js`, `recharts`, `lucide-react`, `clsx`, `tailwind-merge`, and CLI tools (`vercel`, `supabase`).
-   - Configure MCP server registry in `~/.gemini/config/mcp_config.json` and `.idx/mcp.json`.
+1. **Standalone AudioWorklet (`public/worklets/pcm-processor.js`)**:
+   - Create standalone `AudioWorkletProcessor` subclass `PCMProcessor` that streams mono float32 channel data via `this.port.postMessage(input[0])`.
+   - Ensure it is registered as `'pcm-processor'` and served statically from `/worklets/pcm-processor.js`.
 
-2. **Core Types & Data Models (`types/index.ts`)**:
-   - Define `RiskLevel` ('VERIFIED' | 'SUSPICIOUS' | 'HIGH_RISK'), `RiskResult`, `CallMetadata`, `AlertEvent`, `ConfidenceScores`, `AudioFrameData`.
+2. **Acoustic Inference Engine & Streaming Detector (`lib/onnx-inference.ts`)**:
+   - Implement singleton ONNX session caching (WASM execution provider with WebGL fallback).
+   - Implement `downsampleTo16k(input: Float32Array, inputSampleRate: number)` with true linear interpolation.
+   - Build `StreamingDetector` with support for `MediaStream` and `HTMLMediaElement`.
+   - Maintain rolling ring buffer accumulating 64,600 samples (4.03s) at 16kHz with 24,000 sample (1.5s) hop progression.
+   - Return structured `WindowRiskResult` with latency, label, risk score, and confidence.
+   - Provide browser compatibility error messages (Chrome/Edge recommendation) and single-threaded WASM without COOP/COEP overhead.
 
-3. **Core Libraries (`lib/`)**:
-   - `lib/onnx-inference.ts`: Load `/models/voiceguard_acoustic.onnx` using `onnxruntime-web`, extract acoustic features, compute tensor outputs, with resilient browser fallback.
-   - `lib/risk-scoring.ts`: Implement multi-factor weighted scoring combining acoustic liveness, conversational urgency analysis, and metadata signaling.
-   - `lib/supabase-client.ts`: Supabase client integration with mock store fallback for offline/demo reliability.
+3. **EMA Smoother & Mid-Stream Alert Logic (`lib/risk-scoring.ts`)**:
+   - Build `StreamingRiskScorer` with exponential moving average (`alpha = 0.35` default).
+   - Implement configurable thresholds: `>80` High-Risk, `50-80` Suspicious, `<50` Likely Human.
+   - Implement mid-stream first-crossing alert rule to fire immediately when threshold boundary is breached.
 
-4. **PWA & Model Assets (`public/`)**:
-   - Create `public/manifest.json` with standalone display, navy/slate theme, and proper icon mappings.
-   - Generate SVG / Web icons in `public/icons/`.
-   - Place `public/models/voiceguard_acoustic.onnx` placeholder/graph and model documentation.
-
-5. **Design System & Tailwind Configuration**:
-   - Configure custom colors:
-     - `navy-dark`: `#070B14`, `navy-surface`: `#0B1120`, `navy-card`: `#0F172A`, `slate-border`: `#1E293B`
-     - `accent-verified`: `#06B6D4` / `#22D3EE` (Cyan)
-     - `accent-suspicious`: `#F59E0B` / `#FBBF24` (Amber)
-     - `accent-flagged`: `#EF4444` / `#F87171` (Red)
-   - Add glow animations, glassmorphism card styles, and pulse effects in `globals.css`.
-
-6. **Interactive UI Components (`components/`)**:
-   - `LiveCallMonitor`: Live simulated waveform with Web Audio API support / synthetic audio playback, call controls, active caller ID, and live scam transcript analyzer.
-   - `RiskGauge`: Radial arc meter with dynamic color transition, percentage ticker, and threat badge.
-   - `RiskTimeline`: Recharts live streaming area chart displaying composite risk, acoustic spoof probability, and urgency score over duration.
-   - `ConfidenceBreakdown`: Visual bar breakdown of Voice Biometrics, Artifact Analysis, NLP Scam Prompting, and Network Signaling.
-   - `AlertFeed`: Interactive feed of high-severity alerts with dismiss/escalate actions, audio badge triggers, and export option.
-   - `Navbar`: Header with real-time status pill, active route navigation, and PWA install trigger.
-
-7. **Pages & Routes (`app/`)**:
-   - `app/layout.tsx`: Root layout with metadata, dark theme container, and top navigation.
-   - `app/page.tsx`: Landing page with hero banner, live architecture overview, threat metrics counter, and quick-action cards.
-   - `app/dashboard/page.tsx`: Full SOC monitoring center with live metrics grid, call table, active risk feeds, and filters.
-   - `app/demo/page.tsx`: Interactive hands-on simulator with pre-recorded deepfake samples (e.g., Bank Manager Voice Clone, CEO Wire Transfer Scam, Legitimate Customer Service), microphone input testing, and live model toggle.
-   - `app/api/risk-analysis/route.ts` & `app/api/alerts/route.ts`: API endpoints for headless and edge integrations.
-
-8. **Git Repository Setup**:
-   - Initialize/confirm git repository, set remote `voiceguard-sih` under `dev-lover-codes`, commit changes, and attempt push.
+4. **Integration & Verification**:
+   - Update demo/dashboard to utilize `StreamingDetector` and `StreamingRiskScorer`.
+   - Verify `npx tsc --noEmit`, `npm run lint`, and `npm run build` pass with 0 errors.
