@@ -1,89 +1,97 @@
 'use client';
 
 import React from 'react';
-import { RiskLevel } from '@/types';
 import { ShieldCheck, AlertTriangle, ShieldAlert, Activity } from 'lucide-react';
-import { getRiskColorClass } from '@/lib/utils';
 
 interface RiskGaugeProps {
   score: number;
-  level: RiskLevel;
   latencyMs?: number;
   subtext?: string;
   size?: 'sm' | 'md' | 'lg';
+  highRiskThreshold?: number;
+  suspiciousThreshold?: number;
 }
 
 export const RiskGauge: React.FC<RiskGaugeProps> = ({
   score,
-  level,
   latencyMs = 2.4,
   subtext,
   size = 'md',
+  highRiskThreshold = 80,
+  suspiciousThreshold = 50,
 }) => {
-  const colorMeta = getRiskColorClass(level);
-  
+  const isHighRisk = score >= highRiskThreshold;
+  const isSuspicious = score >= suspiciousThreshold && score < highRiskThreshold;
+
+  const colorMeta = isHighRisk
+    ? {
+        text: 'text-red-400',
+        bg: 'bg-red-950/40',
+        border: 'border-red-500/40',
+        badge: 'bg-red-500/15 text-red-300 border border-red-500/30 animate-pulse',
+        hex: '#ef4444',
+        label: 'HIGH-RISK DEEPFAKE',
+        icon: <ShieldAlert className="w-5 h-5 text-red-400 animate-bounce" />,
+      }
+    : isSuspicious
+    ? {
+        text: 'text-amber-400',
+        bg: 'bg-amber-950/40',
+        border: 'border-amber-500/40',
+        badge: 'bg-amber-500/15 text-amber-300 border border-amber-500/30',
+        hex: '#f59e0b',
+        label: 'SUSPICIOUS PATTERN',
+        icon: <AlertTriangle className="w-5 h-5 text-amber-400" />,
+      }
+    : {
+        text: 'text-cyan-400',
+        bg: 'bg-cyan-950/40',
+        border: 'border-cyan-500/40',
+        badge: 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30',
+        hex: '#06b6d4',
+        label: 'LIKELY HUMAN (SAFE)',
+        icon: <ShieldCheck className="w-5 h-5 text-cyan-400" />,
+      };
+
   // SVG Arc calculation for 240 degree gauge
   const radius = size === 'lg' ? 110 : size === 'sm' ? 65 : 85;
   const strokeWidth = size === 'lg' ? 14 : size === 'sm' ? 10 : 12;
   const circumference = 2 * Math.PI * radius;
-  // We use 75% of full circle (270 deg)
   const arcLength = circumference * 0.75;
   const strokeDashoffset = arcLength - (arcLength * Math.min(100, Math.max(0, score))) / 100;
   const dimension = (radius + strokeWidth) * 2 + 10;
 
-  const getStatusIcon = () => {
-    switch (level) {
-      case 'VERIFIED':
-        return <ShieldCheck className="w-5 h-5 text-cyan-400" />;
-      case 'SUSPICIOUS':
-        return <AlertTriangle className="w-5 h-5 text-amber-400" />;
-      case 'HIGH_RISK':
-        return <ShieldAlert className="w-5 h-5 text-red-400 animate-bounce" />;
-    }
-  };
-
-  const getStatusLabel = () => {
-    switch (level) {
-      case 'VERIFIED':
-        return 'BIOMETRIC VERIFIED';
-      case 'SUSPICIOUS':
-        return 'SUSPICIOUS PATTERN';
-      case 'HIGH_RISK':
-        return 'DEEPFAKE FLAGGED';
-    }
-  };
-
   return (
     <div className="relative flex flex-col items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800 shadow-xl overflow-hidden group">
-      {/* Ambient background glow matching risk */}
+      {/* Ambient background glow */}
       <div
-        className="absolute -top-16 -left-16 w-32 h-32 rounded-full blur-3xl opacity-20 pointer-events-none transition-all duration-700"
+        className="absolute -top-16 -left-16 w-32 h-32 rounded-full blur-3xl opacity-25 pointer-events-none transition-all duration-700"
         style={{ backgroundColor: colorMeta.hex }}
       />
       <div
-        className="absolute -bottom-16 -right-16 w-32 h-32 rounded-full blur-3xl opacity-15 pointer-events-none transition-all duration-700"
+        className="absolute -bottom-16 -right-16 w-32 h-32 rounded-full blur-3xl opacity-20 pointer-events-none transition-all duration-700"
         style={{ backgroundColor: colorMeta.hex }}
       />
 
-      {/* Header with Title & Latency */}
+      {/* Header */}
       <div className="w-full flex items-center justify-between mb-2">
         <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
           <Activity className="w-3.5 h-3.5 text-slate-400" />
-          Composite Threat Index
+          Smoothed Risk Index (EMA)
         </span>
         <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800/80 text-slate-300 border border-slate-700">
-          {latencyMs.toFixed(1)}ms
+          {latencyMs.toFixed(1)}ms WASM
         </span>
       </div>
 
-      {/* Radial Gauge SVG */}
+      {/* Circular Gauge SVG */}
       <div className="relative flex items-center justify-center my-2">
         <svg
           width={dimension}
           height={dimension}
           className="transform -rotate-225 transition-all duration-500"
         >
-          {/* Track background */}
+          {/* Background track */}
           <circle
             cx={dimension / 2}
             cy={dimension / 2}
@@ -107,7 +115,7 @@ export const RiskGauge: React.FC<RiskGaugeProps> = ({
             strokeLinecap="round"
             className="transition-all duration-700 ease-out"
             style={{
-              filter: `drop-shadow(0 0 8px ${colorMeta.hex}88)`,
+              filter: `drop-shadow(0 0 10px ${colorMeta.hex}88)`,
             }}
           />
         </svg>
@@ -120,12 +128,12 @@ export const RiskGauge: React.FC<RiskGaugeProps> = ({
                 size === 'lg' ? 'text-5xl' : size === 'sm' ? 'text-3xl' : 'text-4xl'
               } ${colorMeta.text}`}
             >
-              {score}
+              {Math.round(score)}
             </span>
             <span className="text-xs font-mono text-slate-500 ml-1">/100</span>
           </div>
           <span className="text-[11px] uppercase tracking-widest text-slate-400 font-medium mt-0.5">
-            Risk Score
+            Smoothed Risk
           </span>
         </div>
       </div>
@@ -135,8 +143,8 @@ export const RiskGauge: React.FC<RiskGaugeProps> = ({
         <div
           className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider transition-all duration-500 ${colorMeta.badge}`}
         >
-          {getStatusIcon()}
-          <span>{getStatusLabel()}</span>
+          {colorMeta.icon}
+          <span>{colorMeta.label}</span>
         </div>
 
         {subtext && (
@@ -146,19 +154,19 @@ export const RiskGauge: React.FC<RiskGaugeProps> = ({
         )}
       </div>
 
-      {/* Risk Threshold Scale Markers */}
+      {/* Configurable Threshold Markers */}
       <div className="w-full grid grid-cols-3 gap-1 mt-4 pt-3 border-t border-slate-800/80 text-[10px] text-center font-mono">
         <div className="flex flex-col items-center">
-          <span className="text-cyan-400 font-semibold">0 - 34</span>
-          <span className="text-slate-500 text-[9px] uppercase">Verified</span>
+          <span className="text-cyan-400 font-semibold">&lt; {suspiciousThreshold}</span>
+          <span className="text-slate-500 text-[9px] uppercase">Proceed</span>
         </div>
         <div className="flex flex-col items-center">
-          <span className="text-amber-400 font-semibold">35 - 69</span>
-          <span className="text-slate-500 text-[9px] uppercase">Suspicious</span>
+          <span className="text-amber-400 font-semibold">{suspiciousThreshold} - {highRiskThreshold}</span>
+          <span className="text-slate-500 text-[9px] uppercase">Verify</span>
         </div>
         <div className="flex flex-col items-center">
-          <span className="text-red-400 font-semibold">70 - 100</span>
-          <span className="text-slate-500 text-[9px] uppercase">High Risk</span>
+          <span className="text-red-400 font-semibold">&gt; {highRiskThreshold}</span>
+          <span className="text-slate-500 text-[9px] uppercase">Block/Escalate</span>
         </div>
       </div>
     </div>

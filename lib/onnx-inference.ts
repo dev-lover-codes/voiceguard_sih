@@ -106,6 +106,7 @@ export class StreamingDetector {
   private audioContext: AudioContext | null = null;
   private sourceNode: MediaStreamAudioSourceNode | MediaElementAudioSourceNode | null = null;
   private workletNode: AudioWorkletNode | null = null;
+  private analyserNode: AnalyserNode | null = null;
   private pcmBuffer: number[] = [];
   private readonly windowSize: number = 64600; // 4.0375s at 16kHz (native model window)
   private readonly hopSize: number = 24000;    // 1.5s hop at 16kHz
@@ -153,7 +154,11 @@ export class StreamingDetector {
     // Create Worklet Node
     this.workletNode = new AudioWorkletNode(this.audioContext, 'pcm-processor');
 
-    // Create Source Node
+    // Create Analyser Node for real-time waveform visualization
+    this.analyserNode = this.audioContext.createAnalyser();
+    this.analyserNode.fftSize = 64;
+
+    // Create Source Node (MediaStream or HTMLMediaElement)
     if (typeof MediaStream !== 'undefined' && mediaStreamOrAudioElement instanceof MediaStream) {
       this.sourceNode = this.audioContext.createMediaStreamSource(mediaStreamOrAudioElement);
     } else if (mediaStreamOrAudioElement instanceof HTMLMediaElement) {
@@ -164,7 +169,9 @@ export class StreamingDetector {
       throw new Error('Unsupported audio source. Expected MediaStream or HTMLMediaElement.');
     }
 
-    this.sourceNode.connect(this.workletNode);
+    // Both sources feed into the exact same pipeline node before reaching worklet
+    this.sourceNode.connect(this.analyserNode);
+    this.analyserNode.connect(this.workletNode);
 
     this.pcmBuffer = [];
     this.windowStartMs = 0;
@@ -271,6 +278,16 @@ export class StreamingDetector {
   }
 
   /**
+   * Returns current real-time frequency bin energy array for audio visualizers
+   */
+  public getFrequencyData(): Uint8Array | null {
+    if (!this.analyserNode) return null;
+    const data = new Uint8Array(this.analyserNode.frequencyBinCount);
+    this.analyserNode.getByteFrequencyData(data);
+    return data;
+  }
+
+  /**
    * Tears down worklet, nodes, and AudioContext cleanly
    */
   public async stop(): Promise<void> {
@@ -282,6 +299,11 @@ export class StreamingDetector {
       this.workletNode.port.onmessage = null;
       this.workletNode.disconnect();
       this.workletNode = null;
+    }
+
+    if (this.analyserNode) {
+      this.analyserNode.disconnect();
+      this.analyserNode = null;
     }
 
     if (this.sourceNode) {

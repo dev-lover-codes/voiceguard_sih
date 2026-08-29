@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { RiskGauge } from '@/components/RiskGauge';
-import { RiskTimeline } from '@/components/RiskTimeline';
+import { RiskTimeline, TimelineDataPoint } from '@/components/RiskTimeline';
 import { ConfidenceBreakdown } from '@/components/ConfidenceBreakdown';
 import { LiveCallMonitor } from '@/components/LiveCallMonitor';
 import { AlertFeed } from '@/components/AlertFeed';
-import { CallMetadata, RiskResult, TimelinePoint, AlertEvent } from '@/types';
+import { CallMetadata, RiskResult, AlertEvent } from '@/types';
 import { computeCompositeRisk } from '@/lib/risk-scoring';
 import { getSecurityAlerts } from '@/lib/supabase-client';
 import {
@@ -53,53 +53,18 @@ const mockActiveCalls: CallMetadata[] = [
   },
 ];
 
-const mockTranscripts = [
-  {
-    sec: 5,
-    speaker: 'Caller' as const,
-    text: 'Hello, this is officer Vikram from State Bank Head Office. Your savings account has been placed under emergency freeze due to an unauthorized overseas transaction.',
-    flaggedKeywords: ['emergency freeze', 'unauthorized'],
-  },
-  {
-    sec: 14,
-    speaker: 'Victim' as const,
-    text: 'What? I did not initiate any overseas transaction. How do I unfreeze it?',
-  },
-  {
-    sec: 22,
-    speaker: 'Caller' as const,
-    text: 'Do not panic. I have sent an urgent 6-digit OTP to your registered mobile number for KYC update. Read it to me immediately to cancel the penalty.',
-    flaggedKeywords: ['urgent', 'OTP', 'KYC update', 'penalty'],
-  },
-  {
-    sec: 35,
-    speaker: 'Victim' as const,
-    text: 'Let me check my SMS... but my bank told me never to share OTP over the phone.',
-  },
-  {
-    sec: 44,
-    speaker: 'Caller' as const,
-    text: 'Maam, this is an automated police verification protocol. If you fail to disclose the OTP in next 30 seconds, digital arrest will be issued.',
-    flaggedKeywords: ['police verification', 'disclose the OTP', 'digital arrest'],
-  },
-];
-
-const initialTimelineData: TimelinePoint[] = [
-  { time: '00:05', second: 5, riskScore: 28, acousticSpoof: 35, urgency: 20, threshold: 70 },
-  { time: '00:15', second: 15, riskScore: 48, acousticSpoof: 60, urgency: 35, threshold: 70 },
-  { time: '00:25', second: 25, riskScore: 78, acousticSpoof: 86, urgency: 72, threshold: 70 },
-  { time: '00:35', second: 35, riskScore: 88, acousticSpoof: 91, urgency: 85, threshold: 70 },
-  { time: '00:48', second: 48, riskScore: 94, acousticSpoof: 96, urgency: 92, threshold: 70 },
+const initialTimelineData: TimelineDataPoint[] = [
+  { time: '00:05', second: 5, smoothedScore: 28, rawScore: 35 },
+  { time: '00:15', second: 15, smoothedScore: 48, rawScore: 60 },
+  { time: '00:25', second: 25, smoothedScore: 78, rawScore: 86 },
+  { time: '00:35', second: 35, smoothedScore: 88, rawScore: 91 },
+  { time: '00:48', second: 48, smoothedScore: 94, rawScore: 96 },
 ];
 
 export default function DashboardPage() {
   const [selectedCallId, setSelectedCallId] = useState<string>('VG-98421');
-  const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [alerts, setAlerts] = useState<AlertEvent[]>([]);
 
-  const activeCall = mockActiveCalls.find((c) => c.callId === selectedCallId) || mockActiveCalls[0];
-
-  // Dynamic risk calculation based on selected call
   const isHighRiskScenario = selectedCallId === 'VG-98421';
   const isSuspiciousScenario = selectedCallId === 'VG-98423';
 
@@ -114,17 +79,8 @@ export default function DashboardPage() {
       const data = await getSecurityAlerts();
       setAlerts(data);
     }
-    loadAlerts();
+    void loadAlerts();
   }, []);
-
-  const handleTerminateCall = () => {
-    alert(`Call ${activeCall.callId} terminated by SOC analyst. Audio stream blocked.`);
-    setIsPlaying(false);
-  };
-
-  const handleChallengeCaller = () => {
-    alert(`Biometric voice challenge injection sent to channel ${activeCall.callId}. Requesting dynamic phoneme phrase verification.`);
-  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -230,38 +186,35 @@ export default function DashboardPage() {
 
       {/* Main Monitoring Section Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Live Call Stream & Transcript (7 cols) */}
+        {/* Left Column: Live Call Stream & Waveform (7 cols) */}
         <div className="lg:col-span-7 space-y-6">
-          <LiveCallMonitor
-            metadata={activeCall}
-            riskLevel={currentRisk.riskLevel}
-            transcriptEntries={mockTranscripts}
-            isPlaying={isPlaying}
-            onTogglePlay={() => setIsPlaying(!isPlaying)}
-            onTerminateCall={handleTerminateCall}
-            onChallengeCaller={handleChallengeCaller}
-          />
+          <LiveCallMonitor />
 
           {/* Risk Progression Timeline */}
           <RiskTimeline
             data={initialTimelineData}
             currentScore={currentRisk.riskScore}
+            highRiskThreshold={80}
+            suspiciousThreshold={50}
           />
         </div>
 
-        {/* Right Column: Risk Gauge, Multi-Factor Breakdown & Live Alert Feed (5 cols) */}
+        {/* Right Column: Risk Gauge & Indicative Contributing Factors (5 cols) */}
         <div className="lg:col-span-5 space-y-6">
           <RiskGauge
             score={currentRisk.riskScore}
-            level={currentRisk.riskLevel}
             latencyMs={currentRisk.latencyMs}
             subtext={currentRisk.recommendation}
             size="md"
+            highRiskThreshold={80}
+            suspiciousThreshold={50}
           />
 
           <ConfidenceBreakdown
-            scores={currentRisk.confidenceScores}
-            anomalyDetails={currentRisk.anomalyDetails}
+            score={currentRisk.riskScore}
+            confidence={0.92}
+            label={currentRisk.riskLevel === 'HIGH_RISK' ? 'synthetic' : currentRisk.riskLevel === 'SUSPICIOUS' ? 'uncertain' : 'human'}
+            customFactors={currentRisk.anomalyDetails}
           />
         </div>
       </div>
