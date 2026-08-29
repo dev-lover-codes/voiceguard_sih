@@ -5,6 +5,7 @@ import { LiveCallMonitor } from '@/components/LiveCallMonitor';
 import { RiskGauge } from '@/components/RiskGauge';
 import { RiskTimeline, TimelineDataPoint } from '@/components/RiskTimeline';
 import { ConfidenceBreakdown } from '@/components/ConfidenceBreakdown';
+import { PrivacyPanel, InferenceMode } from '@/components/PrivacyPanel';
 import { WindowRiskResult } from '@/lib/onnx-inference';
 import { SmoothedRiskEvaluation } from '@/lib/risk-scoring';
 import { AlertEvent } from '@/types';
@@ -23,6 +24,7 @@ export default function DemoPage() {
   const [currentLatencyMs, setCurrentLatencyMs] = useState<number>(2.4);
   const [currentActionLabel, setCurrentActionLabel] = useState<string>('likely human, proceed');
   const [sessionAlerts, setSessionAlerts] = useState<AlertEvent[]>([]);
+  const [inferenceMode, setInferenceMode] = useState<InferenceMode>('on_device');
 
   // Timeline data capped at 30 points (approx 45 seconds of rolling history)
   const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([
@@ -140,6 +142,12 @@ export default function DemoPage() {
           />
         </div>
       </div>
+
+      {/* Privacy & Regulatory Architecture Panel */}
+      <PrivacyPanel
+        inferenceMode={inferenceMode}
+        onModeChange={setInferenceMode}
+      />
 
       {/* Mid-Stream Session Threat Audit Feed */}
       {sessionAlerts.length > 0 && (
