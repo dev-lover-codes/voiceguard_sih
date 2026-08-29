@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Info, Waves, Activity, Sparkles, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { Info, Activity, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
 
 interface FactorItem {
   name: string;

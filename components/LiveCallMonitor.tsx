@@ -91,10 +91,7 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
 
   // Real-time audio waveform visualizer loop
   useEffect(() => {
-    if (!isMonitoring) {
-      setWaveformBars(Array.from({ length: 32 }, () => 10));
-      return;
-    }
+    if (!isMonitoring) return;
 
     const updateWaveform = () => {
       if (detectorRef.current) {

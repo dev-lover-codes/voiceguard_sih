@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
-import { TrendingUp, Clock, ShieldAlert, Sparkles } from 'lucide-react';
+import { TrendingUp, Clock } from 'lucide-react';
 
 export interface TimelineDataPoint {
   time: string;

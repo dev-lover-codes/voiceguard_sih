@@ -11,17 +11,11 @@ import { AlertEvent } from '@/types';
 import {
   Sparkles,
   Cpu,
-  ShieldCheck,
-  ShieldAlert,
-  Activity,
-  Layers,
   Bell,
-  CheckCircle2,
 } from 'lucide-react';
 
 export default function DemoPage() {
   const [currentSmoothedScore, setCurrentSmoothedScore] = useState<number>(14);
-  const [currentRawScore, setCurrentRawScore] = useState<number>(12);
   const [currentConfidence, setCurrentConfidence] = useState<number>(0.85);
   const [currentLabel, setCurrentLabel] = useState<'human' | 'synthetic' | 'uncertain'>('human');
   const [currentLatencyMs, setCurrentLatencyMs] = useState<number>(2.4);
@@ -37,7 +31,6 @@ export default function DemoPage() {
   const handleScoreUpdate = useCallback(
     (windowResult: WindowRiskResult, evalResult: SmoothedRiskEvaluation) => {
       setCurrentSmoothedScore(evalResult.smoothedScore);
-      setCurrentRawScore(windowResult.riskScore);
       setCurrentConfidence(windowResult.confidence);
       setCurrentLabel(windowResult.label);
       setCurrentLatencyMs(windowResult.inferenceLatencyMs);
