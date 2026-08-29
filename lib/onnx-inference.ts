@@ -52,6 +52,7 @@ export async function getOrLoadOnnxSession(modelPath?: string): Promise<DynamicI
       // Configure single-threaded execution (no COOP/COEP headers required)
       ort.env.wasm.numThreads = 1;
       ort.env.wasm.simd = true;
+      ort.env.wasm.wasmPaths = '/wasm/';
 
       const candidatePaths = modelPath ? [modelPath, ...MODEL_CANDIDATE_PATHS] : MODEL_CANDIDATE_PATHS;
 

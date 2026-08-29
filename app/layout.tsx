@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Navbar } from '@/components/Navbar';
 import { PwaInstallPrompt } from '@/components/PwaInstallPrompt';
+import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister';
 
 export const metadata: Metadata = {
   title: 'VoiceGuard SIH | Real-Time AI Deepfake Voice Fraud Defense',
@@ -42,6 +43,7 @@ export default function RootLayout({
         <Navbar />
         <main className="flex-1 w-full">{children}</main>
         <PwaInstallPrompt />
+        <ServiceWorkerRegister />
         <footer className="border-t border-slate-900 bg-slate-950/80 py-6 text-center text-xs text-slate-500 font-mono">
           <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
             <span>VoiceGuard SIH © 2026 • Real-Time Voice Biometric Security</span>
