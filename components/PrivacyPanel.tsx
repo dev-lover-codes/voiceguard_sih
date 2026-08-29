@@ -11,7 +11,6 @@ import {
   CheckCircle2,
   Sliders,
   Info,
-  Server,
   Zap,
 } from 'lucide-react';
 
