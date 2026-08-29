@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import type { Peer, MediaConnection } from 'peerjs';
 import {
   Laptop,
   Radio,
@@ -36,7 +37,6 @@ export default function ReceiverPage() {
 
   // Scoring state
   const [smoothedScore, setSmoothedScore] = useState<number>(12);
-  const [rawScore, setRawScore] = useState<number>(10);
   const [confidence, setConfidence] = useState<number>(0.88);
   const [label, setLabel] = useState<'human' | 'synthetic' | 'uncertain'>('human');
   const [latencyMs, setLatencyMs] = useState<number>(2.4);
@@ -53,8 +53,8 @@ export default function ReceiverPage() {
   ]);
 
   // Audio & WebRTC Refs
-  const peerRef = useRef<any>(null);
-  const activeCallRef = useRef<any>(null);
+  const peerRef = useRef<Peer | null>(null);
+  const activeCallRef = useRef<MediaConnection | null>(null);
   const detectorRef = useRef<StreamingDetector | null>(null);
   const scorerRef = useRef<StreamingRiskScorer | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -87,10 +87,7 @@ export default function ReceiverPage() {
 
   // Real-time audio waveform visualizer loop
   useEffect(() => {
-    if (connectionState !== 'connected') {
-      setWaveformBars(Array.from({ length: 32 }, () => 10));
-      return;
-    }
+    if (connectionState !== 'connected') return;
 
     const updateWaveform = () => {
       if (detectorRef.current) {
@@ -133,7 +130,7 @@ export default function ReceiverPage() {
         setConnectionState('listening');
       });
 
-      peer.on('call', async (call) => {
+      peer.on('call', (call: MediaConnection) => {
         setConnectionState('incoming');
         setCallerPeerId(call.peer);
         activeCallRef.current = call;
@@ -141,7 +138,7 @@ export default function ReceiverPage() {
         // Answer call and attach remote audio stream
         call.answer();
 
-        call.on('stream', async (remoteStream) => {
+        call.on('stream', async (remoteStream: MediaStream) => {
           setConnectionState('connected');
           setCallDuration(0);
 
@@ -171,7 +168,6 @@ export default function ReceiverPage() {
             );
 
             setSmoothedScore(evalResult.smoothedScore);
-            setRawScore(windowResult.riskScore);
             setConfidence(windowResult.confidence);
             setLabel(windowResult.label);
             setLatencyMs(windowResult.inferenceLatencyMs);
@@ -210,12 +206,12 @@ export default function ReceiverPage() {
         });
       });
 
-      peer.on('error', (err: any) => {
-        if (err?.type === 'unavailable-id') {
-          // If ID already taken, append small random suffix
+      peer.on('error', (err: unknown) => {
+        const peerErr = err as { type?: string };
+        if (peerErr?.type === 'unavailable-id') {
+          // Room code in use, generate unique suffix
           const fallbackCode = `${cleanCode}-${Math.floor(10 + Math.random() * 90)}`;
           setRoomCode(fallbackCode);
-          void initReceiverPeer(fallbackCode);
         } else {
           setConnectionState('error');
         }

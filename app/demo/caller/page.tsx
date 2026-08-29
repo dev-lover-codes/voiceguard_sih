@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import type { Peer, MediaConnection } from 'peerjs';
 import {
   Phone,
   PhoneOff,
@@ -30,8 +31,8 @@ export default function CallerPage() {
   const [waveformBars, setWaveformBars] = useState<number[]>(() => Array.from({ length: 24 }, () => 10));
 
   // Refs for WebRTC & Audio
-  const peerRef = useRef<any>(null);
-  const activeCallRef = useRef<any>(null);
+  const peerRef = useRef<Peer | null>(null);
+  const activeCallRef = useRef<MediaConnection | null>(null);
   const activeStreamRef = useRef<MediaStream | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -45,12 +46,9 @@ export default function CallerPage() {
     return () => clearInterval(interval);
   }, [callStatus]);
 
-  // Waveform animation
+  // Waveform animation loop
   useEffect(() => {
-    if (callStatus !== 'connected') {
-      setWaveformBars(Array.from({ length: 24 }, () => 10));
-      return;
-    }
+    if (callStatus !== 'connected') return;
 
     const interval = setInterval(() => {
       setWaveformBars(Array.from({ length: 24 }, () => Math.floor(Math.random() * 80) + 15));
@@ -128,7 +126,7 @@ export default function CallerPage() {
       const peer = new Peer();
       peerRef.current = peer;
 
-      peer.on('open', (id) => {
+      peer.on('open', () => {
         setCallStatus('dialing');
         const targetPeerId = `voiceguard-sih-room-${cleanCode}`;
         setStatusMessage(`Dialing Receiver at Room: ${cleanCode}...`);
@@ -156,15 +154,17 @@ export default function CallerPage() {
           setStatusMessage('Call ended by Receiver.');
         });
 
-        call.on('error', (err: any) => {
+        call.on('error', (err: unknown) => {
+          const errMessage = err instanceof Error ? err.message : 'Connection lost';
           setCallStatus('error');
-          setStatusMessage(`Call error: ${err?.message || 'Connection lost'}`);
+          setStatusMessage(`Call error: ${errMessage}`);
         });
       });
 
-      peer.on('error', (err: any) => {
+      peer.on('error', (err: unknown) => {
+        const peerErr = err as { type?: string; message?: string };
         setCallStatus('error');
-        setStatusMessage(`PeerJS error: ${err?.type === 'peer-unavailable' ? 'Receiver not found. Make sure Receiver is open with room ' + cleanCode : err?.message}`);
+        setStatusMessage(`PeerJS error: ${peerErr?.type === 'peer-unavailable' ? 'Receiver not found. Make sure Receiver is open with room ' + cleanCode : peerErr?.message || 'Connection failed'}`);
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Audio setup failed';
