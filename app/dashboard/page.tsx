@@ -13,7 +13,6 @@ import {
 } from '@/lib/supabase-client';
 import {
   ShieldAlert,
-  ShieldCheck,
   AlertTriangle,
   Activity,
   Filter,
@@ -21,14 +20,12 @@ import {
   LogOut,
   Send,
   CheckCircle2,
-  PhoneCall,
   Clock,
   Radio,
   Database,
   UserCheck,
   Sparkles,
 } from 'lucide-react';
-import { formatTime } from '@/lib/utils';
 import { User } from '@supabase/supabase-js';
 
 export default function DashboardPage() {
@@ -45,6 +42,11 @@ export default function DashboardPage() {
   const [highRiskOnly, setHighRiskOnly] = useState<boolean>(false);
   const [escalatedLogIds, setEscalatedLogIds] = useState<Set<string>>(new Set());
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  }, []);
 
   // Check auth on load
   useEffect(() => {
@@ -80,12 +82,7 @@ export default function DashboardPage() {
     return () => {
       unsubscribe();
     };
-  }, [currentUser, highRiskOnly]);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
+  }, [currentUser, highRiskOnly, showToast]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

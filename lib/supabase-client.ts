@@ -275,7 +275,7 @@ export async function getSecurityAlerts(): Promise<AlertEvent[]> {
   ];
 }
 
-export async function updateAlertStatus(alertId: string, status: 'active' | 'dismissed' | 'escalated'): Promise<boolean> {
+export async function updateAlertStatus(_alertId: string, _status: 'active' | 'dismissed' | 'escalated'): Promise<boolean> {
   return true;
 }
 
