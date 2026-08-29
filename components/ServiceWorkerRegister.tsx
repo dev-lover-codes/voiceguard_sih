@@ -1,17 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { WifiOff, CheckCircle2 } from 'lucide-react';
+import { WifiOff } from 'lucide-react';
 
 export const ServiceWorkerRegister: React.FC = () => {
-  const [isOffline, setIsOffline] = useState<boolean>(false);
+  const [isOffline, setIsOffline] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return !navigator.onLine;
+    }
+    return false;
+  });
   const [swRegistered, setSwRegistered] = useState<boolean>(false);
 
   useEffect(() => {
-    // Check initial online status
     if (typeof window !== 'undefined') {
-      setIsOffline(!navigator.onLine);
-
       const handleOnline = () => setIsOffline(false);
       const handleOffline = () => setIsOffline(true);
 
