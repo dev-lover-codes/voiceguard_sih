@@ -184,3 +184,36 @@ cd android
 VoiceGuard SIH operates on strict **Privacy-by-Design** principles:
 - **Zero Audio Storage**: Customer voice audio is never recorded, saved to disk, or transmitted to any server.
 - **DPDP Act 2023 & RBI Aligned**: Only non-biometric mathematical threat metrics (`risk_score`, acoustic anomaly labels) are logged.
+
+  ### Full Testing Walkthrough & Guides Verified                                      
+                                                                                      
+  Both GUIDE.md and README.md are updated and pushed to the repository.               
+  ──────                                                                              
+  ### 🚀 Summary of Testing Steps                                                     
+                                                                                      
+    ┌────────────────────────────────────────────────────────────────────────┐        
+    │                        HOW TO TEST VOICEGUARD SIH                      │        
+    ├──────────────────────────────┬─────────────────────────────────────────┤        
+    │ TEST 1: Browser Quick Demo   │ • Open /demo in any browser.            │        
+    │                              │ • Click "Start Monitoring" (mic/sample) │        
+    │                              │ • Observe live gauge & 30-pt timeline.  │        
+    ├──────────────────────────────┼─────────────────────────────────────────┤        
+    │ TEST 2: Two-Device Real Call │ • Open /demo/receiver on Laptop.        │        
+    │                              │ • Open /demo/caller on Phone.           │        
+    │                              │ • Dial room code (e.g. VG-9088).        │        
+    │                              │ • Threat score moves live on laptop.    │        
+    ├──────────────────────────────┼─────────────────────────────────────────┤        
+    │ TEST 3: 100% Offline Test    │ • Load /demo once while online.         │        
+    │                              │ • Turn ON Airplane Mode.                │        
+    │                              │ • Speech detection runs 100% locally.   │        
+    ├──────────────────────────────┼─────────────────────────────────────────┤        
+    │ TEST 4: Android APK Build    │ • Run: npm run cap:build:android        │        
+    │                              │ • Output: android/app/build/outputs/    │        
+    │                              │   apk/debug/app-debug.apk               │        
+    │                              │ • Sideload & grant mic permissions.     │        
+    ├──────────────────────────────┼─────────────────────────────────────────┤        
+    │ TEST 5: Realtime SOC Audit   │ • Open /dashboard                       │        
+    │                              │ • Login: analyst@voiceguard.bank        │        
+    │                              │ • Watch live WebSocket logs & escalate. │        
+    └──────────────────────────────┴─────────────────────────────────────────┘        
+  ──────
