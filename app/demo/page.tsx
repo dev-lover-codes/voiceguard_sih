@@ -8,10 +8,12 @@ import { ConfidenceBreakdown } from '@/components/ConfidenceBreakdown';
 import { WindowRiskResult } from '@/lib/onnx-inference';
 import { SmoothedRiskEvaluation } from '@/lib/risk-scoring';
 import { AlertEvent } from '@/types';
+import Link from 'next/link';
 import {
   Sparkles,
-  Cpu,
   Bell,
+  Smartphone,
+  Laptop,
 } from 'lucide-react';
 
 export default function DemoPage() {
@@ -76,11 +78,26 @@ export default function DemoPage() {
           </p>
         </div>
 
-        {/* Engine status pill */}
-        <div className="flex items-center gap-2">
-          <div className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono text-cyan-300 flex items-center gap-1.5 shadow-sm">
-            <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-            <span>WASM SINGLE-THREADED (16kHz)</span>
+        {/* Demo Mode Navigation & WASM status */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+            <span className="px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40 shadow-sm">
+              Single Device
+            </span>
+            <Link
+              href="/demo/caller"
+              className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Caller Phone</span>
+            </Link>
+            <Link
+              href="/demo/receiver"
+              className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
+            >
+              <Laptop className="w-3.5 h-3.5" />
+              <span>Receiver Screen</span>
+            </Link>
           </div>
         </div>
       </div>
