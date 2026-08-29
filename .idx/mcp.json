@@ -7,6 +7,16 @@
         "firebase-tools@latest",
         "experimental:mcp"
       ]
+    },
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest"
+      ]
+    },
+    "vercel": {
+      "serverUrl": "https://mcp.vercel.com"
     }
   }
 }

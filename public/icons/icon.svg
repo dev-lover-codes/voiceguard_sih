@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#070B14" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22D3EE" />
+      <stop offset="100%" stop-color="#06B6D4" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <!-- Background Shield Container -->
+  <rect width="512" height="512" rx="100" fill="url(#bgGrad)" stroke="#1E293B" stroke-width="4"/>
+  
+  <!-- Outer glowing shield outline -->
+  <path d="M256 70 C340 70, 410 110, 410 230 C410 340, 310 410, 256 442 C202 410, 102 340, 102 230 C102 110, 172 70, 256 70 Z" 
+        fill="none" 
+        stroke="url(#cyanGrad)" 
+        stroke-width="12" 
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        filter="url(#glow)"/>
+  
+  <!-- Audio Waveform / Biometric Soundwave Bars inside shield -->
+  <line x1="170" y1="256" x2="170" y2="256" stroke="#22D3EE" stroke-width="14" stroke-linecap="round"/>
+  <line x1="204" y1="210" x2="204" y2="302" stroke="#22D3EE" stroke-width="14" stroke-linecap="round"/>
+  <line x1="238" y1="170" x2="238" y2="342" stroke="#06B6D4" stroke-width="14" stroke-linecap="round"/>
+  <line x1="274" y1="150" x2="274" y2="362" stroke="#38BDF8" stroke-width="14" stroke-linecap="round"/>
+  <line x1="308" y1="210" x2="308" y2="302" stroke="#22D3EE" stroke-width="14" stroke-linecap="round"/>
+  <line x1="342" y1="256" x2="342" y2="256" stroke="#22D3EE" stroke-width="14" stroke-linecap="round"/>
+
+  <!-- AI Neural Node Center Dots -->
+  <circle cx="256" cy="256" r="10" fill="#FFFFFF" filter="url(#glow)"/>
+</svg>
