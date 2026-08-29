@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { StreamingDetector, WindowRiskResult } from '@/lib/onnx-inference';
 import { StreamingRiskScorer, SmoothedRiskEvaluation } from '@/lib/risk-scoring';
+import { ThrottledRiskLogger } from '@/lib/supabase-client';
 import { RiskGauge } from '@/components/RiskGauge';
 import { RiskTimeline, TimelineDataPoint } from '@/components/RiskTimeline';
 import { ConfidenceBreakdown } from '@/components/ConfidenceBreakdown';
@@ -57,6 +58,7 @@ export default function ReceiverPage() {
   const activeCallRef = useRef<MediaConnection | null>(null);
   const detectorRef = useRef<StreamingDetector | null>(null);
   const scorerRef = useRef<StreamingRiskScorer | null>(null);
+  const loggerRef = useRef<ThrottledRiskLogger | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
@@ -162,9 +164,7 @@ export default function ReceiverPage() {
             const detector = new StreamingDetector();
             detectorRef.current = detector;
 
-            if (scorerRef.current) {
-              scorerRef.current.reset('WEBRTC-INBOUND-01');
-            }
+            loggerRef.current = new ThrottledRiskLogger('webrtc_call');
 
             detector.onScore((windowResult: WindowRiskResult) => {
               if (isCleanedUp || !scorerRef.current) return;
@@ -178,6 +178,16 @@ export default function ReceiverPage() {
               setLabel(windowResult.label);
               setLatencyMs(windowResult.inferenceLatencyMs);
               setActionLabel(evalResult.actionLabel);
+
+              // Throttled logging (state change, 15s heartbeat, or session end)
+              if (loggerRef.current) {
+                loggerRef.current.logWindow(
+                  evalResult.smoothedScore,
+                  windowResult.confidence,
+                  windowResult.label,
+                  evalResult.actionLabel
+                );
+              }
 
               const sec = Math.floor(windowResult.windowStartMs / 1000);
               const mins = Math.floor(sec / 60).toString().padStart(2, '0');

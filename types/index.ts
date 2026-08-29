@@ -75,3 +75,52 @@ export interface AudioSampleScenario {
     urgencyScore: number;
   }>;
 }
+
+// ============================================================================
+// Supabase Database Row Interfaces
+// ============================================================================
+
+export interface RiskLogRow {
+  id: string;
+  created_at: string;
+  risk_score: number;
+  label: string;
+  confidence: number;
+  channel_simulated: string;
+  org_id: string;
+  anomaly_summary: string | null;
+}
+
+export interface InsertRiskLogPayload {
+  risk_score: number;
+  label: string;
+  confidence: number;
+  channel_simulated?: string;
+  org_id?: string;
+  anomaly_summary?: string | null;
+}
+
+export interface AlertRuleRow {
+  id: string;
+  created_at: string;
+  org_id: string;
+  threshold_high: number;
+  threshold_medium: number;
+  escalation_action: string;
+}
+
+export interface AlertEventRow {
+  id: string;
+  created_at: string;
+  risk_log_id: string | null;
+  action_taken: string;
+  resolved_by: string | null;
+  resolved_at: string | null;
+}
+
+export interface InsertAlertEventPayload {
+  risk_log_id?: string | null;
+  action_taken: string;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+}

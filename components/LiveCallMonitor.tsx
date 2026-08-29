@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { StreamingDetector, WindowRiskResult } from '@/lib/onnx-inference';
 import { StreamingRiskScorer, SmoothedRiskEvaluation } from '@/lib/risk-scoring';
+import { ThrottledRiskLogger } from '@/lib/supabase-client';
 import { AlertEvent } from '@/types';
 import { formatTime } from '@/lib/utils';
 
@@ -46,6 +47,7 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   // Unified Pipeline Refs
   const detectorRef = useRef<StreamingDetector | null>(null);
   const scorerRef = useRef<StreamingRiskScorer | null>(null);
+  const loggerRef = useRef<ThrottledRiskLogger | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
@@ -136,6 +138,10 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
       audioElementRef.current.pause();
     }
 
+    if (loggerRef.current) {
+      loggerRef.current.flush(currentSmoothed, 0.90, currentTier === 'HIGH_RISK' ? 'synthetic' : 'human');
+    }
+
     setIsMonitoring(false);
   };
 
@@ -152,6 +158,10 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
         scorerRef.current.reset('LIVE-CALL-STREAM');
       }
 
+      loggerRef.current = new ThrottledRiskLogger(
+        selectedSource === 'mic' ? 'hardware_mic' : 'simulated_call'
+      );
+
       const detector = new StreamingDetector();
       detectorRef.current = detector;
 
@@ -167,6 +177,16 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
             ? 'SUSPICIOUS'
             : 'LOW'
         );
+
+        // Throttled logging (state change, 15s heartbeat, or session end)
+        if (loggerRef.current) {
+          loggerRef.current.logWindow(
+            evalResult.smoothedScore,
+            windowResult.confidence,
+            windowResult.label,
+            evalResult.actionLabel
+          );
+        }
 
         if (onScoreUpdate) {
           onScoreUpdate(windowResult, evalResult);
