@@ -120,7 +120,7 @@ export const Navbar: React.FC = () => {
 
           {/* GitHub Repo Link */}
           <a
-            href="https://github.com/dev-lover-codes/voiceguard-sih"
+            href="https://github.com/dev-lover-codes/voiceguard_sih"
             target="_blank"
             rel="noopener noreferrer"
             className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition-colors"

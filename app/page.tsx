@@ -56,7 +56,7 @@ export default function HomePage() {
           </Link>
 
           <a
-            href="https://github.com/dev-lover-codes/voiceguard-sih/blob/main/GUIDE.md"
+            href="https://github.com/dev-lover-codes/voiceguard_sih/blob/main/GUIDE.md"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 px-6 py-3.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white font-semibold text-sm transition-all"
