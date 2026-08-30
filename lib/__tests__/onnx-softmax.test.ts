@@ -137,7 +137,7 @@ describe('WAV fixture ordering – genuine riskScore < cloned riskScore', () => 
 
     // === DEV-MODE LOUD ASSERTION ===
     if (process.env.NODE_ENV !== 'production' && genuineRisk >= clonedRisk) {
-      // eslint-disable-next-line no-console
+       
       console.error(
         '[VoiceGuard DEV ASSERTION FAILED] ' +
         `genuine_voice.wav riskScore (${genuineRisk}) is NOT lower than ` +

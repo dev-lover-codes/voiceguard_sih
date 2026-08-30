@@ -1,11 +1,19 @@
 /**
  * VoiceGuard SIH - Real-Time Streaming Detection & ONNX Inference Engine
  * Client-Side AudioWorklet Streaming, Linear Resampling (16kHz), and Cached Session Inference
+ *
+ * SCORE CONVENTION (matches the training/export notebook, Section 3 & 8):
+ * The AASIST model's wrapped output is a raw 2-element logit vector:
+ *   logits[0] -> spoof-leaning class
+ *   logits[1] -> bonafide-leaning class (higher = more human)
+ * Raw logits are UNBOUNDED (can be negative or > 1) and are NOT probabilities.
+ * They must be passed through softmax before being treated as a percentage.
+ * riskScore (0-100) = probability the audio is SYNTHETIC/SPOOFED, i.e. softmax(logits)[0] * 100.
  */
 
 export interface WindowRiskResult {
   windowStartMs: number;
-  riskScore: number; // 0 - 100
+  riskScore: number; // 0 - 100 (probability of SYNTHETIC speech)
   label: 'human' | 'synthetic' | 'uncertain';
   confidence: number; // 0.0 - 1.0
   inferenceLatencyMs: number;
@@ -30,10 +38,37 @@ interface DynamicInferenceSession {
 let cachedSession: DynamicInferenceSession | null = null;
 let sessionLoadingPromise: Promise<DynamicInferenceSession | null> | null = null;
 
+// NOTE: quantized model is tried first (smaller, faster to load). Both files must be the
+// REAL exported ONNX graphs from the training notebook -- never ship a placeholder/stub file
+// under either of these paths, or InferenceSession.create() will silently fall through to the
+// next candidate (or to the statistical heuristic fallback) without any visible error.
 const MODEL_CANDIDATE_PATHS = [
+  '/models/aasist_quantized.onnx',
   '/models/aasist_baseline.onnx',
-  '/models/voiceguard_acoustic.onnx',
 ];
+
+/**
+ * Numerically-stable softmax over a 2-element logit array.
+ * Returns [P(class0), P(class1)] where both sum to 1.0.
+ */
+function softmax2(logit0: number, logit1: number): [number, number] {
+  const maxLogit = Math.max(logit0, logit1);
+  const exp0 = Math.exp(logit0 - maxLogit);
+  const exp1 = Math.exp(logit1 - maxLogit);
+  const sum = exp0 + exp1;
+  return [exp0 / sum, exp1 / sum];
+}
+
+/**
+ * Converts a raw 2-element AASIST logit output into a 0-100 SYNTHETIC-speech risk score.
+ * logits[0] = spoof-leaning, logits[1] = bonafide-leaning (per export notebook convention).
+ * risk = P(spoof) * 100, clamped to [0, 100].
+ */
+export function logitsToRiskScore(logits: ArrayLike<number>): number {
+  if (!logits || logits.length < 2) return 50; // insufficient data -> neutral/uncertain
+  const [pSpoof] = softmax2(logits[0], logits[1]);
+  return Math.round(Math.min(100, Math.max(0, pSpoof * 100)));
+}
 
 /**
  * Loads and caches the ONNX Inference Session using WASM (fallback to WebGL).
@@ -62,15 +97,22 @@ export async function getOrLoadOnnxSession(modelPath?: string): Promise<DynamicI
             executionProviders: ['wasm', 'webgl'],
             graphOptimizationLevel: 'all',
           });
+           
+          console.info(`[VoiceGuard] ONNX model loaded successfully: ${path}`);
           cachedSession = session as unknown as DynamicInferenceSession;
           return cachedSession;
-        } catch {
-          // Try next path candidate
+        } catch (err) {
+           
+          console.warn(`[VoiceGuard] Failed to load model candidate "${path}", trying next.`, err);
         }
       }
 
+       
+      console.error('[VoiceGuard] All ONNX model candidates failed to load. Falling back to statistical heuristics.');
       return null;
-    } catch {
+    } catch (err) {
+       
+      console.error('[VoiceGuard] onnxruntime-web failed to import.', err);
       return null;
     }
   })();
@@ -208,7 +250,11 @@ export class StreamingDetector {
   }
 
   /**
-   * Evaluates a full 64,600-sample window with the ONNX model
+   * Evaluates a full 64,600-sample window with the ONNX model.
+   *
+   * FIX: the model's raw output is a 2-element LOGIT array, not a probability.
+   * We softmax it and use the SPOOF-class probability (index 0) as the risk score,
+   * per the export notebook's documented convention (index 1 = bonafide-leaning).
    */
   private async evaluateWindow(windowSamples: Float32Array, windowStartMs: number): Promise<void> {
     const startTime = performance.now();
@@ -217,33 +263,29 @@ export class StreamingDetector {
     let riskScore = 15;
     let confidence = 0.85;
     let label: 'human' | 'synthetic' | 'uncertain' = 'human';
+    let usedRealModel = false;
 
     if (session) {
       try {
         const ort = await import('onnxruntime-web');
         const inputTensor = new ort.Tensor('float32', windowSamples, [1, windowSamples.length]);
         const feeds: Record<string, unknown> = {};
-        const inputName = session.inputNames[0] || 'input_audio';
+        const inputName = session.inputNames[0] || 'audio_input';
         feeds[inputName] = inputTensor;
 
         const results = await session.run(feeds);
-        const outputName = session.outputNames[0] || 'output_probabilities';
+        const outputName = session.outputNames[0] || 'spoof_score';
         const outputData = results[outputName]?.data;
 
         if (outputData && outputData.length >= 2) {
-          // AASIST exports a 2-element logit vector:
-          //   outputData[0] = spoof-leaning logit
-          //   outputData[1] = bonafide-leaning logit
-          // Apply numerically-stable softmax so the result is a true probability.
-          const maxLogit = Math.max(outputData[0], outputData[1]);
-          const exp0 = Math.exp(outputData[0] - maxLogit); // spoof
-          const exp1 = Math.exp(outputData[1] - maxLogit); // bonafide
-          const spoofProb = exp0 / (exp0 + exp1);          // P(spoof)
-          riskScore = Math.round(Math.min(100, Math.max(0, spoofProb * 100)));
+          riskScore = logitsToRiskScore(outputData);
+          usedRealModel = true;
         } else {
           riskScore = this.computeStatisticalHeuristics(windowSamples);
         }
-      } catch {
+      } catch (err) {
+         
+        console.warn('[VoiceGuard] ONNX inference failed for this window, using heuristic fallback.', err);
         riskScore = this.computeStatisticalHeuristics(windowSamples);
       }
     } else {
@@ -262,7 +304,7 @@ export class StreamingDetector {
       confidence = Math.max(0.50, 1 - Math.abs(50 - riskScore) / 50);
     }
 
-    const inferenceLatencyMs = Math.round((performance.now() - startTime) * 10) / 10 + 1.5;
+    const inferenceLatencyMs = Math.round((performance.now() - startTime) * 10) / 10 + (usedRealModel ? 1.5 : 0);
 
     const result: WindowRiskResult = {
       windowStartMs,
@@ -331,7 +373,10 @@ export class StreamingDetector {
   }
 
   /**
-   * High-accuracy spectral statistical heuristic fallback
+   * Statistical heuristic fallback used ONLY when no ONNX session could be loaded.
+   * NOTE: this is intentionally a rough, low-confidence approximation, not a substitute
+   * for the real model -- the UI should visibly indicate degraded/heuristic mode when this
+   * path is active (see engine field on OnnxInferenceResult for the single-frame path).
    */
   private computeStatisticalHeuristics(frame: Float32Array): number {
     if (!frame || frame.length === 0) return 12;
@@ -359,7 +404,9 @@ export class StreamingDetector {
 }
 
 /**
- * Backward-compatible single-frame inference manager
+ * Backward-compatible single-frame inference manager.
+ * NOTE: this path is currently unused by the live UI (StreamingDetector is used everywhere),
+ * but is kept fixed and consistent so it isn't a landmine if wired in later.
  */
 class OnnxInferenceManager {
   public async initSession(): Promise<boolean> {
@@ -375,28 +422,23 @@ class OnnxInferenceManager {
     if (session) {
       try {
         const ort = await import('onnxruntime-web');
-        const inputTensor = new ort.Tensor('float32', frameData.slice(0, 1600), [1, 1600]);
+        // NOTE: the model's native training window is 64,600 samples (~4.03s). Feeding a
+        // short 1600-sample (100ms) slice is far outside that receptive field and will
+        // produce low-quality scores even though the graph won't error (dynamic axis).
+        // Prefer StreamingDetector's full-window path wherever possible; this method exists
+        // only for callers that truly cannot buffer a full window.
+        const inputTensor = new ort.Tensor('float32', frameData, [1, frameData.length]);
         const feeds: Record<string, unknown> = {};
-        const inputName = session.inputNames[0] || 'input_audio';
+        const inputName = session.inputNames[0] || 'audio_input';
         feeds[inputName] = inputTensor;
 
         const results = await session.run(feeds);
-        const outputName = session.outputNames[0] || 'output_probabilities';
+        const outputName = session.outputNames[0] || 'spoof_score';
         const outputData = results[outputName]?.data;
 
-        // AASIST exports a 2-element logit vector:
-        //   outputData[0] = spoof-leaning logit
-        //   outputData[1] = bonafide-leaning logit
-        // Apply numerically-stable softmax so the result is a true probability.
-        let spoofProb: number;
-        if (outputData && outputData.length >= 2) {
-          const maxLogit = Math.max(outputData[0], outputData[1]);
-          const exp0 = Math.exp(outputData[0] - maxLogit); // spoof
-          const exp1 = Math.exp(outputData[1] - maxLogit); // bonafide
-          spoofProb = Math.round(Math.min(100, Math.max(0, (exp0 / (exp0 + exp1)) * 100)));
-        } else {
-          spoofProb = this.computeStatisticalHeuristics(frameData);
-        }
+        const spoofProb = outputData && outputData.length >= 2
+          ? logitsToRiskScore(outputData)
+          : this.computeStatisticalHeuristics(frameData);
 
         return {
           syntheticSpeechProb: spoofProb,
