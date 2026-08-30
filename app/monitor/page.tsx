@@ -26,7 +26,7 @@ import {
   Bell,
 } from 'lucide-react';
 import { StreamingDetector, WindowRiskResult } from '@/lib/onnx-inference';
-import { StreamingRiskScorer, SmoothedRiskEvaluation } from '@/lib/risk-scoring';
+import { StreamingRiskScorer, SmoothedRiskEvaluation, computeCompositeRisk, evaluateKeywords } from '@/lib/risk-scoring';
 import { RiskTimeline, TimelineDataPoint } from '@/components/RiskTimeline';
 import { ConfidenceBreakdown } from '@/components/ConfidenceBreakdown';
 import { AlertEvent } from '@/types';
@@ -123,6 +123,12 @@ export default function MonitorPage() {
   const [activeAlert, setActiveAlert] = useState<AlertEvent | null>(null);
   const [sessionAlerts, setSessionAlerts] = useState<AlertEvent[]>([]);
 
+  // Multi-factor scoring state
+  const [transcript, setTranscript] = useState<string>('');
+  const [flaggedKeywords, setFlaggedKeywords] = useState<string[]>([]);
+  const [urgencyScore, setUrgencyScore] = useState<number>(0);
+  const [compositeScore, setCompositeScore] = useState<number>(0);
+
   const peerRef = useRef<Peer | null>(null);
   const activeCallRef = useRef<MediaConnection | null>(null);
   const detectorRef = useRef<StreamingDetector | null>(null);
@@ -130,6 +136,9 @@ export default function MonitorPage() {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const windowCountRef = useRef(0);
+  // Always holds the latest transcript string so onScore closures aren't stale
+  const transcriptRef = useRef<string>('');
+  useEffect(() => { transcriptRef.current = transcript; }, [transcript]);
 
   useEffect(() => {
     const scorer = new StreamingRiskScorer('MONITOR-INBOUND', {
@@ -232,14 +241,29 @@ export default function MonitorPage() {
 
           detector.onScore((windowResult: WindowRiskResult) => {
             if (!scorerRef.current) return;
+
+            // Compute NLP urgency from transcript at time of window (read latest ref)
+            const kwResult = evaluateKeywords(transcriptRef.current);
+            const currentUrgency = kwResult.urgencyScore;
+
+            // Composite multi-factor score (no prosody window available in WebRTC path)
+            const compositeResult = computeCompositeRisk(
+              windowResult.riskScore, // ONNX softmax acoustic score
+              currentUrgency,          // NLP urgency from transcript
+              0,                       // metadata anomaly (no signaling data)
+              0,                       // biometric mismatch (no enrollment)
+              -1,                      // prosody: not computed (no pcm window ref)
+            );
+
             const evalResult: SmoothedRiskEvaluation = scorerRef.current.evaluate(
-              windowResult.riskScore,
+              compositeResult.riskScore,
               windowResult.windowStartMs
             );
             windowCountRef.current += 1;
             const wCount = windowCountRef.current;
             setWindowsAnalyzed(wCount);
             setSmoothedScore(evalResult.smoothedScore);
+            setCompositeScore(compositeResult.riskScore);
             setConfidence(windowResult.confidence);
             setLabel(windowResult.label);
             setLatencyMs(windowResult.inferenceLatencyMs);
@@ -599,7 +623,58 @@ export default function MonitorPage() {
           </div>
         )}
 
+        {/* ── Call Notes / Transcript Panel (NLP keyword matching) ─────────── */}
+        <div className="p-5 bg-slate-900/60 rounded-2xl border border-slate-800 space-y-3">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+            <X className="w-3.5 h-3.5 text-cyan-400 rotate-0" />
+            <span>Call Notes / Transcript</span>
+            <span className="text-slate-500 font-normal">(NLP keyword matching — paste or type what you hear)</span>
+          </div>
+          <textarea
+            value={transcript}
+            onChange={(e) => {
+              const text = e.target.value;
+              setTranscript(text);
+              const kw = evaluateKeywords(text);
+              setFlaggedKeywords(kw.flagged);
+              setUrgencyScore(kw.urgencyScore);
+            }}
+            placeholder="Paste call transcript or type keywords... e.g. 'Your bank account is blocked, share OTP immediately'"
+            rows={3}
+            className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-300 placeholder-slate-600 resize-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/50 font-mono"
+          />
+          {flaggedKeywords.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                ⚠ Flagged ({urgencyScore}/100):
+              </span>
+              {flaggedKeywords.map((kw) => (
+                <span key={kw} className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-950/60 border border-amber-700/60 text-amber-300">
+                  {kw}
+                </span>
+              ))}
+            </div>
+          )}
+          {/* Score breakdown when connected */}
+          {connectionState === 'connected' && (
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              {[
+                { label: 'Acoustic', value: smoothedScore, color: 'text-cyan-400' },
+                { label: 'NLP Urgency', value: urgencyScore, color: 'text-amber-400' },
+                { label: 'Composite', value: compositeScore, color: smoothedScore >= 75 ? 'text-red-400' : smoothedScore >= 45 ? 'text-amber-400' : 'text-emerald-400' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-center">
+                  <div className={`text-base font-extrabold font-mono ${color}`}>{value}<span className="text-slate-600 text-xs">/100</span></div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">{label}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* ── end transcript panel ──────────────────────────────────────────── */}
+
       </div>
     </div>
   );
 }
+

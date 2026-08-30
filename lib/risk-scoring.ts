@@ -182,10 +182,11 @@ export function evaluateKeywords(transcript: string): { flagged: string[]; urgen
 }
 
 export function computeCompositeRisk(
-  acousticSpoofProb: number,     // 0 - 100
-  urgencyScore: number,          // 0 - 100
-  metadataAnomaly: number,       // 0 - 100
-  biometricMismatch: number = 0  // 0 - 100
+  acousticSpoofProb: number,       // 0 - 100
+  urgencyScore: number,            // 0 - 100
+  metadataAnomaly: number,         // 0 - 100
+  biometricMismatch: number = 0,   // 0 - 100
+  prosodyPhaseArtifacts: number = -1 // 0 - 100 from computePhaseArtifactsScore(); -1 = not provided
 ): RiskResult {
   const start = performance.now();
 
@@ -209,7 +210,11 @@ export function computeCompositeRisk(
   const confidenceScores: ConfidenceScores = {
     biometricLiveness: Math.max(0, 100 - Math.round((acousticSpoofProb * 0.7 + biometricMismatch * 0.3))),
     syntheticSpeechScore: Math.round(acousticSpoofProb),
-    phaseArtifacts: Math.round(acousticSpoofProb * 0.85 + (Math.random() * 8 - 4)),
+    // phaseArtifacts: real prosody-derived spoof signal from computePhaseArtifactsScore().
+    // Falls back to a pure acoustic proxy (no random noise) when prosody data is unavailable.
+    phaseArtifacts: prosodyPhaseArtifacts >= 0
+      ? Math.round(Math.min(100, Math.max(0, prosodyPhaseArtifacts)))
+      : Math.round(Math.min(100, Math.max(0, acousticSpoofProb * 0.85))),
     urgencyPromptScore: Math.round(urgencyScore),
     signalingAnomaly: Math.round(metadataAnomaly),
   };

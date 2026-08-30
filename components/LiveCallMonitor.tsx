@@ -17,9 +17,12 @@ import {
   X,
   PhoneCall,
   CheckCircle2,
+  MessageSquare,
+  TriangleAlert,
 } from 'lucide-react';
 import { StreamingDetector, WindowRiskResult } from '@/lib/onnx-inference';
-import { StreamingRiskScorer, SmoothedRiskEvaluation } from '@/lib/risk-scoring';
+import { StreamingRiskScorer, SmoothedRiskEvaluation, computeCompositeRisk, evaluateKeywords } from '@/lib/risk-scoring';
+import { computePhaseArtifactsScore } from '@/lib/prosody-analysis';
 import { ThrottledRiskLogger } from '@/lib/supabase-client';
 import { AlertEvent } from '@/types';
 import { formatTime } from '@/lib/utils';
@@ -43,6 +46,16 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   const [waveformBars, setWaveformBars] = useState<number[]>(() => Array.from({ length: 32 }, () => 15));
   const [currentSmoothed, setCurrentSmoothed] = useState<number>(15);
   const [currentTier, setCurrentTier] = useState<'LOW' | 'SUSPICIOUS' | 'HIGH_RISK'>('LOW');
+
+  // Multi-factor scoring state
+  const [compositeScore, setCompositeScore] = useState<number>(15);
+  const [transcript, setTranscript] = useState<string>('');
+  const [flaggedKeywords, setFlaggedKeywords] = useState<string[]>([]);
+  const [urgencyScore, setUrgencyScore] = useState<number>(0);
+  const [prosodyScore, setProsodyScore] = useState<number>(50); // 50 = neutral until first window
+
+  // Holds the most recent 64,600-sample PCM window for prosody analysis
+  const lastPcmWindowRef = useRef<Float32Array | null>(null);
 
   // Unified Pipeline Refs
   const detectorRef = useRef<StreamingDetector | null>(null);
@@ -154,6 +167,9 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
 
       setElapsedSec(0);
       setActiveAlert(null);
+      setCompositeScore(15);
+      setProsodyScore(50);
+      lastPcmWindowRef.current = null;
       if (scorerRef.current) {
         scorerRef.current.reset('LIVE-CALL-STREAM');
       }
@@ -166,9 +182,38 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
       detectorRef.current = detector;
 
       // Handle real-time window scores every ~1.5s hop
-      detector.onScore((windowResult) => {
+      detector.onScore((windowResult, pcmWindow?: Float32Array) => {
         if (!scorerRef.current) return;
-        const evalResult = scorerRef.current.evaluate(windowResult.riskScore, windowResult.windowStartMs);
+
+        // --- Prosody analysis on the raw PCM window ---
+        // pcmWindow is passed by the enhanced StreamingDetector callback (may be undefined
+        // for browser builds that don't expose it yet — fall back to last stored window).
+        const pcm = pcmWindow ?? lastPcmWindowRef.current;
+        const prosodyPhase = pcm ? computePhaseArtifactsScore(pcm) : -1;
+        if (pcm) {
+          lastPcmWindowRef.current = pcm;
+          setProsodyScore(100 - prosodyPhase); // naturalness score for display
+        }
+
+        // --- Keyword urgency score from transcript (updated live as user types) ---
+        const kwResult = evaluateKeywords(transcript);
+        const currentUrgency = kwResult.urgencyScore;
+
+        // --- Composite multi-factor risk score ---
+        // Weights: 45% acoustic + 25% NLP urgency + 15% signaling + 15% biometric
+        // Metadata anomaly defaults to 0 (no signaling data in browser demo)
+        const compositeResult = computeCompositeRisk(
+          windowResult.riskScore, // acoustic ONNX softmax score
+          currentUrgency,          // NLP keyword urgency
+          0,                       // metadata anomaly (no VoIP signaling data in demo)
+          0,                       // biometric mismatch (no enrollment baseline)
+          prosodyPhase,            // real prosody-derived phase artifacts score
+        );
+
+        // Feed COMPOSITE score (not raw acoustic) into EMA scorer
+        const evalResult = scorerRef.current.evaluate(compositeResult.riskScore, windowResult.windowStartMs);
+
+        setCompositeScore(compositeResult.riskScore);
         setCurrentSmoothed(evalResult.smoothedScore);
         setCurrentTier(
           evalResult.smoothedScore >= 80
@@ -512,6 +557,68 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
           </span>
         </div>
       </div>
+
+      {/* ── Call Notes / Transcript Panel ─────────────────────────────────── */}
+      {/* Feeds evaluateKeywords() for live NLP urgency scoring.              */}
+      {/* Real speech-to-text integration can replace manual entry in v2.     */}
+      <div className="p-4 border-t border-slate-800/70 bg-slate-950/60 space-y-3">
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+          <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Call Notes / Transcript</span>
+          <span className="text-slate-500 font-normal">(NLP keyword matching — paste or type call content)</span>
+        </div>
+
+        <textarea
+          value={transcript}
+          onChange={(e) => {
+            const text = e.target.value;
+            setTranscript(text);
+            const kw = evaluateKeywords(text);
+            setFlaggedKeywords(kw.flagged);
+            setUrgencyScore(kw.urgencyScore);
+          }}
+          placeholder="Paste call transcript or type keywords heard... e.g. 'Your bank account is blocked, please share OTP urgently'"
+          rows={3}
+          className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-300 placeholder-slate-600 resize-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/50 font-mono"
+        />
+
+        {/* Flagged keywords display */}
+        {flaggedKeywords.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] text-slate-500 font-mono shrink-0 flex items-center gap-1">
+              <TriangleAlert className="w-3 h-3 text-amber-400" />
+              Flagged ({urgencyScore}/100):
+            </span>
+            {flaggedKeywords.map((kw) => (
+              <span
+                key={kw}
+                className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-950/60 border border-amber-700/60 text-amber-300"
+              >
+                {kw}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Multi-Factor Score Breakdown strip */}
+        {isMonitoring && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+            {[
+              { label: 'Acoustic (ONNX)', value: currentSmoothed, color: 'text-cyan-400', desc: '45% weight' },
+              { label: 'Prosody / Phase', value: 100 - prosodyScore, color: 'text-violet-400', desc: '~15% via composite' },
+              { label: 'NLP Urgency', value: urgencyScore, color: 'text-amber-400', desc: '25% weight' },
+              { label: 'Composite Risk', value: compositeScore, color: currentTier === 'HIGH_RISK' ? 'text-red-400' : currentTier === 'SUSPICIOUS' ? 'text-amber-400' : 'text-emerald-400', desc: 'Final EMA input' },
+            ].map(({ label, value, color, desc }) => (
+              <div key={label} className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-center">
+                <div className={`text-base font-extrabold font-mono ${color}`}>{value}<span className="text-slate-600 text-xs">/100</span></div>
+                <div className="text-[10px] text-slate-400 mt-0.5">{label}</div>
+                <div className="text-[9px] text-slate-600 font-mono">{desc}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* ── end transcript panel ────────────────────────────────────────────── */}
     </div>
   );
 };
