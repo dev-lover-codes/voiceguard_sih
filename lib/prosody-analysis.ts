@@ -25,57 +25,74 @@
 /** Minimum RMS energy below which a frame is considered silence. */
 const SILENCE_THRESHOLD_RMS = 0.015;
 
-/** F0 search range at 16 kHz: 60 Hz → 500 Hz (human speech range). */
-const F0_MIN_LAG = Math.round(16000 / 500); // 32 samples  (~500 Hz)
-const F0_MAX_LAG = Math.round(16000 / 60);  // 267 samples (~60 Hz)
+/** F0 search range at 16 kHz: 70 Hz → 450 Hz (human speech range). */
+const F0_MIN_LAG = Math.round(16000 / 450); // ~35 samples (~450 Hz)
+const F0_MAX_LAG = Math.round(16000 / 70);  // ~228 samples (~70 Hz)
 
 /**
  * Estimates the fundamental frequency (F0) of a single audio frame using
- * normalized autocorrelation (YIN-simplified peak-picking).
+ * difference function autocorrelation.
  *
  * Returns the estimated F0 in Hz, or 0 if the frame is silent or no clear
  * pitch period is found within the human speech F0 range.
  */
 export function estimateF0(frame: Float32Array): number {
   const N = frame.length;
-  if (N < F0_MAX_LAG * 2) return 0;
+  if (N < F0_MIN_LAG * 2) return 0;
 
   // RMS check — skip silent frames
   let sumSq = 0;
   for (let i = 0; i < N; i++) sumSq += frame[i] * frame[i];
-  const rms = Math.sqrt(sumSq / N);
-  if (rms < SILENCE_THRESHOLD_RMS) return 0;
+  const energy = sumSq / N;
+  if (Math.sqrt(energy) < SILENCE_THRESHOLD_RMS) return 0;
 
-  // Compute difference function d(tau) = sum_i (x[i] - x[i+tau])^2
-  // This is the YIN criterion without the CMNDFs normalization step,
-  // which is sufficient for rough F0 extraction on speech.
-  let bestLag = 0;
-  let bestVal = Infinity;
+  const maxTau = Math.min(F0_MAX_LAG, Math.floor(N / 2));
+  const diffs: number[] = new Array(maxTau + 1).fill(0);
 
-  for (let tau = F0_MIN_LAG; tau <= F0_MAX_LAG && tau < N; tau++) {
+  for (let tau = F0_MIN_LAG; tau <= maxTau; tau++) {
     let d = 0;
     const limit = N - tau;
     for (let i = 0; i < limit; i++) {
       const diff = frame[i] - frame[i + tau];
       d += diff * diff;
     }
-    if (d < bestVal) {
-      bestVal = d;
-      bestLag = tau;
+    diffs[tau] = d / limit;
+  }
+
+  // Find the first local minimum below threshold (0.25 * energy)
+  // to avoid octave halving (picking 2*period instead of fundamental period)
+  const threshold = energy * 0.25;
+  let bestLag = 0;
+
+  for (let tau = F0_MIN_LAG + 1; tau < maxTau; tau++) {
+    if (diffs[tau] < diffs[tau - 1] && diffs[tau] <= diffs[tau + 1]) {
+      if (diffs[tau] < threshold) {
+        bestLag = tau;
+        break;
+      }
     }
   }
 
-  // Reject if no clear minimum was found (flat signal or pure noise)
-  if (bestLag === 0 || bestVal > sumSq * 0.8) return 0;
+  // If no minimum was below threshold, pick the global minimum
+  if (bestLag === 0) {
+    let minVal = Infinity;
+    for (let tau = F0_MIN_LAG; tau <= maxTau; tau++) {
+      if (diffs[tau] < minVal) {
+        minVal = diffs[tau];
+        bestLag = tau;
+      }
+    }
+    if (minVal > energy * 0.8) return 0; // reject flat noise
+  }
 
-  return 16000 / bestLag;
+  return bestLag > 0 ? 16000 / bestLag : 0;
 }
 
 /**
  * Computes a prosody naturalness score from a 16 kHz PCM window.
  *
  * Algorithm:
- *   • Split window into 128-sample frames (8 ms) with 64-sample hop.
+ *   • Split window into 512-sample frames (32 ms) with 256-sample hop.
  *   • Estimate F0 per voiced frame (silent frames excluded).
  *   • Compute pitch coefficient of variation (CV = σ / μ) over the voiced frames.
  *     - Human CV is typically 0.08–0.25 for conversational speech.
@@ -89,8 +106,8 @@ export function estimateF0(frame: Float32Array): number {
  * @returns number in [0, 100]:  0 = TTS-like,  100 = naturally variable human speech
  */
 export function computeProsodyScore(pcmWindow: Float32Array): number {
-  const FRAME_SIZE = 128;
-  const HOP_SIZE   = 64;
+  const FRAME_SIZE = 512;
+  const HOP_SIZE   = 256;
 
   const f0Values: number[] = [];
   let totalFrames = 0;
