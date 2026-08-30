@@ -141,9 +141,6 @@ export default function UnifiedDemoPage() {
   const [receiverConfidence, setReceiverConfidence] = useState<number>(0.88);
   const [receiverLabel, setReceiverLabel] = useState<'human' | 'synthetic' | 'uncertain'>('human');
   const [receiverLatencyMs, setReceiverLatencyMs] = useState<number>(2.4);
-  const [receiverAcoustic, setReceiverAcoustic] = useState<number>(12);
-  const [receiverProsody, setReceiverProsody] = useState<number>(50);
-  const [receiverComposite, setReceiverComposite] = useState<number>(12);
   const [receiverWaveform, setReceiverWaveform] = useState<number[]>(() => Array.from({ length: 28 }, () => 12));
   const [receiverTimeline, setReceiverTimeline] = useState<TimelineDataPoint[]>([
     { time: '00:00', second: 0, smoothedScore: 12, rawScore: 10 },
@@ -280,9 +277,6 @@ export default function UnifiedDemoPage() {
 
       const freqData = detector.getFrequencyData();
       const prosodyPhase = pcmWindow ? computePhaseArtifactsScore(pcmWindow, freqData) : -1;
-      if (prosodyPhase >= 0) {
-        setReceiverProsody(100 - prosodyPhase);
-      }
 
       const kw = evaluateKeywords(receiverTranscriptRef.current);
       const composite = computeCompositeRisk(
@@ -303,8 +297,6 @@ export default function UnifiedDemoPage() {
 
       setWindowsAnalyzed(count);
       setReceiverSmoothed(evaluation.smoothedScore);
-      setReceiverAcoustic(windowResult.riskScore);
-      setReceiverComposite(composite.riskScore);
       setReceiverConfidence(windowResult.confidence);
       setReceiverLabel(windowResult.label);
       setReceiverLatencyMs(windowResult.inferenceLatencyMs);

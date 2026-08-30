@@ -18,6 +18,14 @@
   - **`[ 📱 Two-Device Call Test ]`**: Full WebRTC call simulation between two devices with embedded sub-tabs:
     - **Caller Sub-Tab**: Target room code dialer, outgoing stream selector (Mic, Cloned, Genuine, Custom File), outgoing waveform visualizer, mute toggle, and dialer.
     - **Receiver / Call Guard Sub-Tab**: Room code listener, **Auto-Answer Incoming Calls toggle**, real-time ONNX acoustic scoring, pitch variance/prosody analysis, live browser Web Speech STT transcript, scam keyword urgency matching, and caller threat verdicts.
+- **Strict Privacy-by-Design Compliance (DPDP Act 2023 & RBI Guidelines)**:
+  - Audited against `lib/supabase-client.ts` telemetry table (`risk_logs`):
+    - Logged fields: `risk_score`, `label`, `confidence`, `channel_simulated`, `org_id`, `anomaly_summary`, `created_at`.
+    - Guarantees: **Zero raw audio buffer persistence, zero voiceprint storage, zero customer transcript retention**.
+    - All audio frames processed strictly in volatile RAM via AudioWorklet and immediately discarded.
+  - Transparent Roadmap Classification:
+    - **Enrolled Voiceprint Biometric Matching (Roadmap)**: 1:1 baseline enrollment against corporate identity databases.
+    - **Multilingual Regional NLP Keyword Parsing (Roadmap)**: Extended regional Indian dialect dictionaries (Hindi, Tamil, Telugu, Kannada, Bengali).
 - **Lightweight Client-Side Prosody Extractor (`lib/prosody-analysis.ts`)**:
   - Autocorrelation / difference function fundamental frequency (F0) tracking (70 Hz – 450 Hz human vocal range).
   - Pitch variance analysis (coefficient of variation $CV = \sigma / \mu$) capturing micro-variations and pitch jitter.
@@ -27,7 +35,6 @@
   - Automatically feeds recognized speech into `evaluateKeywords()`.
 - **Multi-Factor Composite Risk Scoring Engine**: Computes dynamic 0-100 composite risk index fusing 45% Acoustic + 25% NLP Urgency + 15% Biometric/Prosody + 15% Network/Signaling Anomaly.
 - **Exponential Moving Average (EMA) Scoring & Mid-Stream Alerts**: Smoothed score engine (`alpha = 0.35`) with configurable threshold boundaries (>80 High-Risk, 50-80 Suspicious, <50 Likely Human).
-- **Routable Next.js API Routes (`app/api/`)**: Standard edge/server API endpoints for alert retrieval/status updates (`/api/alerts`) and multi-factor risk analysis (`/api/risk-analysis`).
 
 ---
 
@@ -68,6 +75,7 @@
 │   ├── RiskGauge.tsx            # Animated circular radial risk score meter (Cyan/Amber/Red)
 │   ├── RiskTimeline.tsx         # Live Recharts time-series tracking risk over time
 │   ├── ConfidenceBreakdown.tsx  # Multi-factor score bar breakdown
+│   ├── PrivacyPanel.tsx         # DPDP Act 2023 & RBI compliance audit drawer & mode switcher
 │   ├── AlertFeed.tsx            # Real-time alert list with quick-actions & filtering
 │   └── PwaInstallPrompt.tsx     # Mobile install banner / prompt
 ```

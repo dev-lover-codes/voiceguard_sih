@@ -77,7 +77,7 @@ export const PrivacyPanel: React.FC<PrivacyPanelProps> = ({
     {
       id: 'retention',
       title: 'Configurable retention',
-      description: 'Throttled telemetry: writes only on state-boundary change or 15s heartbeat',
+      description: 'Throttled telemetry: writes only on state-boundary change, 15s heartbeat, or session end',
       active: actualConfig.configurableRetention,
       icon: <Database className="w-3.5 h-3.5 text-cyan-400" />,
       tag: 'THROTTLED',
@@ -101,8 +101,8 @@ export const PrivacyPanel: React.FC<PrivacyPanelProps> = ({
             <ShieldCheck className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-slate-200">Privacy & Inference Architecture</h3>
-            <p className="text-xs text-slate-400">Compliance with DPDP Act 2023 & RBI Biometric Fraud Guidelines</p>
+            <h3 className="text-sm font-semibold text-slate-200">Privacy &amp; Inference Architecture</h3>
+            <p className="text-xs text-slate-400">Compliance with DPDP Act 2023 &amp; RBI Cyber Security Guidelines</p>
           </div>
         </div>
 
@@ -150,10 +150,10 @@ export const PrivacyPanel: React.FC<PrivacyPanelProps> = ({
       )}
 
       {/* Short, Honest Data-Retention Statement */}
-      <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-start gap-2.5 text-xs text-slate-300">
+      <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-start gap-2.5 text-xs text-slate-300">
         <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
         <p className="leading-relaxed">
-          <strong className="text-white">Data Retention Guarantee:</strong> Only the risk score and timestamp are stored. Raw audio is processed in-memory in your browser and discarded immediately.
+          <strong className="text-white">Data Retention Guarantee:</strong> Only non-identifiable numerical risk metrics (<code className="font-mono text-cyan-300">risk_score</code>, <code className="font-mono text-cyan-300">confidence</code>, <code className="font-mono text-cyan-300">label</code>, and acoustic <code className="font-mono text-cyan-300">anomaly_summary</code>) and timestamps are persisted to Supabase. Raw audio is processed in-memory in your browser via AudioWorklet and discarded immediately — zero raw audio or transcripts are ever stored.
         </p>
       </div>
 
@@ -201,15 +201,17 @@ export const PrivacyPanel: React.FC<PrivacyPanelProps> = ({
 
       {/* Regulatory Details Drawer */}
       {showComplianceDetails && (
-        <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-300 space-y-2 animate-in fade-in">
+        <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-300 space-y-2.5 animate-in fade-in">
           <div className="font-bold text-white flex items-center gap-1.5">
             <Zap className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Financial & Privacy Regulatory Alignment</span>
+            <span>Financial &amp; Privacy Regulatory Alignment</span>
           </div>
-          <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-400">
-            <li><strong>Digital Personal Data Protection (DPDP) Act 2023:</strong> Zero storage of customer voice biometrics prevents non-consensual voice harvesting.</li>
-            <li><strong>Reserve Bank of India (RBI) Cyber Security Framework:</strong> Telemetry table (<code className="text-cyan-300 font-mono">risk_logs</code>) captures only non-identifiable anomaly indices for SOC fraud prevention.</li>
+          <ul className="list-disc list-inside space-y-1.5 text-[11px] text-slate-400">
+            <li><strong>Digital Personal Data Protection (DPDP) Act 2023:</strong> Zero storage or transmission of customer voice recordings prevents non-consensual voice harvesting.</li>
+            <li><strong>Reserve Bank of India (RBI) Cyber Security Guidelines:</strong> Telemetry table (<code className="text-cyan-300 font-mono">risk_logs</code>) captures strictly non-identifiable anomaly metrics (<code className="text-cyan-300 font-mono">risk_score</code>, <code className="text-cyan-300 font-mono">label</code>, <code className="text-cyan-300 font-mono">confidence</code>, <code className="text-cyan-300 font-mono">anomaly_summary</code>) for fraud monitoring without PII.</li>
             <li><strong>Web Audio Isolation:</strong> AudioWorklet operates in a sandboxed execution context separate from main thread DOM and cookies.</li>
+            <li><strong>Enrolled Voiceprint Biometric Matching (Roadmap):</strong> 1:1 speaker identity enrollment baseline is planned for future hardware security module (HSM) integration.</li>
+            <li><strong>Multilingual Regional NLP Keyword Parsing (Roadmap):</strong> Expanded Indian regional dialect dictionaries (Hindi, Tamil, Telugu, Marathi) planned for subsequent release.</li>
           </ul>
         </div>
       )}

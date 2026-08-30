@@ -57,11 +57,9 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   const [currentTier, setCurrentTier] = useState<'LOW' | 'SUSPICIOUS' | 'HIGH_RISK'>('LOW');
 
   // Multi-factor scoring state
-  const [compositeScore, setCompositeScore] = useState<number>(15);
   const [transcript, setTranscript] = useState<string>('');
   const [flaggedKeywords, setFlaggedKeywords] = useState<string[]>([]);
   const [urgencyScore, setUrgencyScore] = useState<number>(0);
-  const [prosodyScore, setProsodyScore] = useState<number>(50); // 50 = neutral until first window
 
   // Web Speech API STT State
   const [isSttActive, setIsSttActive] = useState<boolean>(false);
@@ -226,8 +224,6 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
 
       setElapsedSec(0);
       setActiveAlert(null);
-      setCompositeScore(15);
-      setProsodyScore(50);
       lastPcmWindowRef.current = null;
       if (scorerRef.current) {
         scorerRef.current.reset('LIVE-CALL-STREAM');
@@ -251,7 +247,6 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
         const prosodyPhase = pcm ? computePhaseArtifactsScore(pcm) : -1;
         if (pcm) {
           lastPcmWindowRef.current = pcm;
-          setProsodyScore(100 - prosodyPhase); // naturalness score for display
         }
 
         // --- Keyword urgency score from transcript (updated live as user types) ---
@@ -272,7 +267,6 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
         // Feed COMPOSITE score (not raw acoustic) into EMA scorer
         const evalResult = scorerRef.current.evaluate(compositeResult.riskScore, windowResult.windowStartMs);
 
-        setCompositeScore(compositeResult.riskScore);
         setCurrentSmoothed(evalResult.smoothedScore);
         setCurrentTier(
           evalResult.smoothedScore >= 80

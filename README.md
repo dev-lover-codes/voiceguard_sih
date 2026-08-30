@@ -13,21 +13,43 @@ VoiceGuard SIH is an enterprise-grade, client-side, real-time voice anti-spoofin
    - High-precision linear interpolation resampler (`downsampleTo16k`) dynamically standardizes input to 16,000 Hz.
 2. **On-Device ONNX Acoustic Inference (`lib/onnx-inference.ts`)**:
    - Single-threaded WebAssembly (`onnxruntime-web`) execution requiring no COOP/COEP headers.
-   - Continuous 64,600-sample sliding windows (~4.0s) with 24,000-sample hops (~1.5s).
-   - Singleton cached session with sub-3ms inference latency.
-3. **Exponential Moving Average (EMA) Risk Scorer (`lib/risk-scoring.ts`)**:
+   - Continuous 64,600-sample sliding windows (~4.03s) with 24,000-sample hops (~1.5s).
+   - Singleton cached session with sub-3ms inference latency (`< 2.5ms` measured).
+3. **Multi-Factor Composite Risk & Prosody Engine (`lib/risk-scoring.ts` & `lib/prosody-analysis.ts`)**:
+   - Multi-factor risk formula: 45% Acoustic ONNX + 25% NLP Urgency + 15% Prosody/Phase + 15% Network/Signaling Anomaly.
+   - Autocorrelation pitch tracking and phase variance analysis ($70\text{ Hz} - 450\text{ Hz}$ vocal range).
    - Exponential smoothing ($\alpha = 0.35$) suppresses transient acoustic anomalies and room noise spikes.
    - Mid-stream threshold crossing alert trigger fires immediately upon crossing the Suspicious ($\ge 50$) or High-Risk ($\ge 80$) boundary.
-4. **WebRTC Two-Device Call Pipeline (`peerjs`)**:
-   - **Caller Phone (`/demo/caller`)**: Streams live phone microphone or bundled AI deepfake audio sample into WebRTC room.
-   - **Receiver Screen (`/demo/receiver`)**: Ingests remote inbound audio directly into the `StreamingDetector` engine, outputting live gauge, scrolling timeline, and speaker audio.
-5. **Supabase Realtime SOC Audit Dashboard (`/dashboard`)**:
+4. **Browser-Native Speech-to-Text & Scam Keyword Detection (`lib/speech-recognition.ts`)**:
+   - Zero-cost browser-native `SpeechRecognition` live transcript transcription.
+   - Real-time conversational urgency scoring evaluating high-pressure fraud triggers (OTP, KYC verification, bank account suspension).
+5. **Unified Live Monitor & WebRTC Two-Device Simulation (`/demo`)**:
+   - **`[ 🎙️ Live Microphone ]`**: Instant local microphone stream analysis.
+   - **`[ 🎵 Play Sample Call ]`**: Pre-loaded audio fixtures (Genuine Human Voice vs AI-Cloned Deepfake) & custom file upload.
+   - **`[ 📱 Two-Device Call Test ]`**: Live WebRTC audio stream between caller phone and receiver screen with auto-answer support.
+6. **Supabase Realtime SOC Audit Dashboard (`/dashboard`)**:
    - Realtime table listening to `risk_logs` inserts via WebSocket broadcast.
    - Color-coded threat rows, high-risk filter, and supervisor escalation queue (`alert_events`).
    - Gated operator authentication (`analyst@voiceguard.bank`).
-6. **Privacy-by-Design Compliance (DPDP Act 2023 & RBI Guidelines)**:
-   - Zero raw audio upload or voice biometric persistence. Only mathematical risk indices and acoustic anomaly tags are persisted.
+7. **Privacy-by-Design Compliance (DPDP Act 2023 & RBI Guidelines)**:
+   - Zero raw audio upload, zero voiceprint storage, and zero transcript persistence.
+   - Telemetry table (`risk_logs`) stores strictly non-identifiable mathematical metrics:
+     - `risk_score` (0–100 integer index)
+     - `label` (`human`, `synthetic`, or `uncertain`)
+     - `confidence` (0.00–1.00 float)
+     - `channel_simulated` (`hardware_mic`, `simulated_call`, `webrtc_call`)
+     - `anomaly_summary` (Acoustic and urgency anomaly explanation tag)
+     - `created_at` (ISO timestamp)
    - Throttled database logging: writes strictly on state-boundary transitions, 15-second heartbeats, or session termination.
+
+---
+
+## 🗺️ Product Roadmap
+
+The following planned capabilities are in development for future releases:
+- **Enrolled Voiceprint Biometric Matching (Roadmap)**: 1:1 speaker identity enrollment baseline against enrolled corporate vocal profiles.
+- **Multilingual Regional NLP Keyword Parsing (Roadmap)**: Extended regional Indian dialect dictionaries (Hindi, Tamil, Telugu, Kannada, Bengali) for localized scam keyword detection.
+- **Hardware Security Module (HSM) Cryptographic Attestation (Roadmap)**: Hardware-backed signing of tamper-evident risk audit logs.
 
 ---
 
@@ -36,7 +58,7 @@ VoiceGuard SIH is an enterprise-grade, client-side, real-time voice anti-spoofin
 VoiceGuard SIH is equipped with a custom **Cache-First** Service Worker (`public/sw.js`) and PWA manifest:
 
 - **Precached Assets**:
-  - HTML App Shell (`/`, `/demo`, `/dashboard`, `/demo/caller`, `/demo/receiver`)
+  - HTML App Shell (`/`, `/demo`, `/dashboard`)
   - Acoustic ONNX models (`/models/aasist_baseline.onnx`, `/models/voiceguard_acoustic.onnx`)
   - WebAssembly runtime binaries (`/wasm/ort-wasm-simd-threaded.wasm`, `/wasm/*.mjs`)
   - AudioWorklet processor (`/worklets/pcm-processor.js`)
@@ -59,15 +81,14 @@ Follow these steps to demonstrate 100% offline capability on a mobile phone or l
    - Allow the browser to load once. The Service Worker installs automatically and caches the ONNX model, WASM binaries, AudioWorklet, and app bundle into persistent CacheStorage.
 2. **Disconnect Network Completely**:
    - Turn **ON Airplane Mode** (or fully disable Wi-Fi and Cellular Data).
-   - Observe the yellow floating status badge: `Offline Mode Active • Local WASM Acoustic Inference Running`.
+   - Observe the offline status badge: `ONNX WASM • 100% Local Inference Active`.
 3. **Trigger Live Voice Detection**:
-   - Click **"Start Monitoring"** under "Live mic" or select "Play a sample call (AI-Cloned Deepfake)".
-   - Speak into the phone/laptop microphone or let the sample audio play.
+   - Click **"Start Monitoring"** under "Live Microphone" or select "Play Sample Call".
+   - Speak into the microphone or let the sample audio play.
 4. **Observe Offline Results**:
-   - The **Real-Time Soundwave** animates.
+   - The **Real-Time Waveform** animates.
    - The **Live Risk Gauge** moves dynamically (0–100).
    - The **Live Threat Timeline** scrolls and updates every ~1.5s.
-   - The **Indicative Factors** breakdown updates continuously.
    - The entire pipeline executes locally with **0 bytes transmitted over the network**.
 
 ---
@@ -81,8 +102,8 @@ npm install
 # 2. Run local development server
 npm run dev
 
-# 3. Type check & ESLint
-npx tsc --noEmit
+# 3. Unit Tests & ESLint
+npm test
 npm run lint
 
 # 4. Production Build
@@ -109,13 +130,6 @@ npm run cap:open:android
 
 > **APK Output Location:** `android/app/build/outputs/apk/debug/app-debug.apk`
 
-### Sideloading Instructions for Judges
-1. Transfer `app-debug.apk` to an Android device (via WhatsApp, Google Drive, USB, or ADB).
-2. Tap the APK file to install.
-3. When prompted, toggle **"Allow from this source"** (enable unknown sources in Settings).
-4. Launch the app and grant microphone permissions when prompted.
-5. For full testing walkthroughs, consult [**`GUIDE.md`**](GUIDE.md).
-
 ---
 
 ## 🔒 Supabase Database Schema
@@ -126,4 +140,3 @@ supabase db push
 ```
 
 Schema file located at [`supabase/migrations/20260829000000_voiceguard_schema.sql`](supabase/migrations/20260829000000_voiceguard_schema.sql).
-
