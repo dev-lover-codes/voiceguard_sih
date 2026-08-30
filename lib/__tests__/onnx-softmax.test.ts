@@ -157,8 +157,20 @@ describe('WAV fixture ordering – genuine riskScore < cloned riskScore', () => 
     const clonedPcm  = readWavPCM(clonedPath);
     expect(genuinePcm.length).toBeGreaterThan(0);
     expect(clonedPcm.length).toBeGreaterThan(0);
-    for (const s of genuinePcm) expect(Math.abs(s)).toBeLessThanOrEqual(1.01);
-    for (const s of clonedPcm)  expect(Math.abs(s)).toBeLessThanOrEqual(1.01);
+
+    let maxGenuine = 0;
+    for (let i = 0; i < genuinePcm.length; i++) {
+      const a = Math.abs(genuinePcm[i]);
+      if (a > maxGenuine) maxGenuine = a;
+    }
+    expect(maxGenuine).toBeLessThanOrEqual(1.01);
+
+    let maxCloned = 0;
+    for (let i = 0; i < clonedPcm.length; i++) {
+      const a = Math.abs(clonedPcm[i]);
+      if (a > maxCloned) maxCloned = a;
+    }
+    expect(maxCloned).toBeLessThanOrEqual(1.01);
   });
 });
 

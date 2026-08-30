@@ -4,20 +4,30 @@
 **VoiceGuard SIH** is a real-time, client-and-edge powered deepfake voice call fraud detection system built for Smart India Hackathon (SIH) and financial security operations. It continuously monitors live voice call streams to detect synthetic/cloned speech, AI voice conversions, acoustic phase anomalies, and high-urgency conversational social engineering prompts.
 
 ### Key Capabilities
-- **Real-Time Acoustic Inference**: Browser and edge-based ONNX model execution (`onnxruntime-web`) to evaluate synthetic speech indicators and spectral phase continuity without sending sensitive raw voice streams to third parties.
-- **AudioWorklet PCM Ingestion & Linear Resampler**: Standalone zero-latency worklet (`public/worklets/pcm-processor.js`) streaming native hardware audio (44.1k/48k) resampled to 16kHz via true linear interpolation.
-- **Rolling Window Streaming Detector**: 64,600-sample (4.03s) window with 24,000-sample (1.5s) hop ring buffer feeding model's native training length.
-- **Exponential Moving Average (EMA) Scoring & Mid-Stream Alerts**: Smoothed score engine (`alpha = 0.35`) with configurable threshold boundaries (>80 High-Risk, 50-80 Suspicious, <50 Likely Human) that fires alerts the first moment a threshold is crossed mid-stream.
-- **WebRTC Two-Device Call Demonstration (PeerJS)**:
-  - **Caller App (`/demo/caller`)**: Runs on mobile phone or secondary device. Streams live microphone or pre-loaded AI deepfake audio over WebRTC to a shared room code.
-  - **Receiver App (`/demo/receiver`)**: Runs on judge's laptop. Receives inbound WebRTC audio stream, feeds directly into `StreamingDetector` / `StreamingRiskScorer`, and plots risk scores live as audio plays from the phone.
-- **Multi-Factor Risk Scoring Engine**: Computes dynamic 0-100 risk index fusing ONNX acoustic score, NLP urgency indicators, and signaling metadata heuristics.
-- **Three-Tier Visual Threat Classification**:
-  - **Verified (0–30)**: Highlighted with electric cyan (`#06B6D4` / `#22D3EE`). Normal human biometric consistency.
-  - **Suspicious (31–70)**: Highlighted with warm amber (`#F59E0B` / `#FBBF24`). High synthetic probability or sudden acoustic jitter.
-  - **High-Risk Flagged (71–100)**: Highlighted with crimson red (`#EF4444` / `#F87171`). Deepfake clone identified + scam keyword patterns detected.
-- **PWA Ready**: Web App Manifest and offline icons for seamless mobile "Add to Home Screen" installation for on-the-go security analysts.
-- **Developer Tooling & MCP Integration**: Pre-configured Vercel and Supabase CLIs and Model Context Protocol (MCP) server definitions for AI agent operations.
+- **Lean, Judge-Focused Landing Page (`/`)**:
+  - Direct value proposition tailored for hackathon judges & security evaluators.
+  - Verifiable real-world metrics (latency, 1.1MB quantized model, 4.03s rolling window, 100% on-device privacy).
+  - 3 core feature highlights for verified functionality: Real-Time Acoustic Detection (ONNX WASM), Zero-Latency Offline PWA, and Privacy-First On-Device Processing.
+  - Direct CTAs to Live Monitor (`/demo`) and SOC Dashboard (`/dashboard`).
+- **Single Unified Live Demo & Call Guard Route (`/demo`) with Focused Visual Hierarchy**:
+  - **Single Dominant Focal Point**: The live threat verdict (`REAL HUMAN (SAFE)` / `SUSPICIOUS ANOMALY` / `AI DEEPFAKE CLONE`) paired with the large centered `RiskGauge` is the primary visual center of attention.
+  - **Collapsible Technical Analysis**: `RiskTimeline` (rolling 30-window time-series) and `ConfidenceBreakdown` (spectral factors & confidence spectrum) are housed in an expandable "Technical Analysis & Breakdown" section, collapsed by default to prevent visual competition.
+  - **Conditional Alert Feed**: Mid-stream threshold breach alerts log is only rendered once at least one alert has actually triggered mid-stream, taking up zero space during normal operation.
+  - **`[ 🎙️ Live Microphone ]`**: Instant local microphone ingestion via AudioWorklet and 16kHz linear resampler.
+  - **`[ 🎵 Play Sample Call ]`**: Pre-loaded audio fixtures (Genuine Human Voice vs AI-Cloned Deepfake) & custom file upload testing.
+  - **`[ 📱 Two-Device Call Test ]`**: Full WebRTC call simulation between two devices with embedded sub-tabs:
+    - **Caller Sub-Tab**: Target room code dialer, outgoing stream selector (Mic, Cloned, Genuine, Custom File), outgoing waveform visualizer, mute toggle, and dialer.
+    - **Receiver / Call Guard Sub-Tab**: Room code listener, **Auto-Answer Incoming Calls toggle**, real-time ONNX acoustic scoring, pitch variance/prosody analysis, live browser Web Speech STT transcript, scam keyword urgency matching, and caller threat verdicts.
+- **Lightweight Client-Side Prosody Extractor (`lib/prosody-analysis.ts`)**:
+  - Autocorrelation / difference function fundamental frequency (F0) tracking (70 Hz – 450 Hz human vocal range).
+  - Pitch variance analysis (coefficient of variation $CV = \sigma / \mu$) capturing micro-variations and pitch jitter.
+  - Conversational pause and silence ratio tracking over rolling windows.
+- **Browser-Native Web Speech API Integration (`lib/speech-recognition.ts`)**:
+  - Zero-cost browser-native `SpeechRecognition` live transcript transcription.
+  - Automatically feeds recognized speech into `evaluateKeywords()`.
+- **Multi-Factor Composite Risk Scoring Engine**: Computes dynamic 0-100 composite risk index fusing 45% Acoustic + 25% NLP Urgency + 15% Biometric/Prosody + 15% Network/Signaling Anomaly.
+- **Exponential Moving Average (EMA) Scoring & Mid-Stream Alerts**: Smoothed score engine (`alpha = 0.35`) with configurable threshold boundaries (>80 High-Risk, 50-80 Suspicious, <50 Likely Human).
+- **Routable Next.js API Routes (`app/api/`)**: Standard edge/server API endpoints for alert retrieval/status updates (`/api/alerts`) and multi-factor risk analysis (`/api/risk-analysis`).
 
 ---
 
@@ -26,6 +36,7 @@
 - **Language**: TypeScript (Strict Mode)
 - **Styling**: Tailwind CSS (Navy / Slate Deep Dark Palette, Custom Glows & Borders)
 - **Acoustic Inference Engine**: `onnxruntime-web` (single-threaded WASM / WebGL fallback)
+- **Prosody & Speech Analysis**: Autocorrelation pitch tracking & Web Speech API (`webkitSpeechRecognition`)
 - **WebRTC Signaling**: `peerjs` (zero backend, public cloud broker)
 - **Audio Processing**: Standalone `AudioWorkletProcessor` (`/worklets/pcm-processor.js`)
 - **Database & Auth Client**: `@supabase/supabase-js`
@@ -35,124 +46,28 @@
 
 ---
 
-## 3. Project File & Directory Structure
+## 3. Simplified 3-Route Architecture
 ```
 /home/user/project-5/
 ├── app/
 │   ├── api/
-│   │   ├── risk-analysis/
-│   │   │   └── route.ts         # Edge/Server risk computation API
-│   │   └── alerts/
-│   │       └── route.ts         # Threat alerts retrieval & dispatch
+│   │   ├── alerts/
+│   │   │   └── route.ts         # GET/POST threat alerts retrieval & dispatch
+│   │   └── risk-analysis/
+│   │       └── route.ts         # POST edge/server composite risk computation API
 │   ├── dashboard/
 │   │   └── page.tsx             # SOC Analyst Command Center
 │   ├── demo/
-│   │   ├── caller/
-│   │   │   └── page.tsx         # WebRTC Caller Interface (Phone / Secondary Device)
-│   │   ├── receiver/
-│   │   │   └── page.tsx         # WebRTC Receiver & Judge Live Scoring Screen
-│   │   └── page.tsx             # Single-Device Live Voice & Deepfake Simulator
+│   │   └── page.tsx             # Unified Live Monitor: Focused Focal Point, Collapsible Charts
 │   ├── globals.css              # Dark theme design system & glow utilities
 │   ├── layout.tsx               # Root layout with Header, Navigation, PWA meta
-│   └── page.tsx                 # High-impact Landing Page & Feature Architecture
+│   └── page.tsx                 # Lean, judge-focused Landing Page
 ├── components/
-│   ├── Navbar.tsx               # Global top navigation with status indicators
+│   ├── Navbar.tsx               # 3-Link Header (Overview, Live Monitor, SOC Dashboard)
 │   ├── LiveCallMonitor.tsx      # Real-time audio waveform, call status & live transcript
 │   ├── RiskGauge.tsx            # Animated circular radial risk score meter (Cyan/Amber/Red)
 │   ├── RiskTimeline.tsx         # Live Recharts time-series tracking risk over time
 │   ├── ConfidenceBreakdown.tsx  # Multi-factor score bar breakdown
 │   ├── AlertFeed.tsx            # Real-time alert list with quick-actions & filtering
 │   └── PwaInstallPrompt.tsx     # Mobile install banner / prompt
-├── lib/
-│   ├── onnx-inference.ts        # Cached ONNX session, Linear Resampler, & StreamingDetector
-│   ├── supabase-client.ts       # Supabase client with offline fallback mock
-│   ├── risk-scoring.ts          # EMA Smoother, Configurable Thresholds, & Mid-Stream Alert Engine
-│   └── utils.ts                 # Styling & formatting helpers
-├── public/
-│   ├── manifest.json            # PWA Web App Manifest
-│   ├── icons/                   # PWA icons (192x192, 512x512, maskable, SVG)
-│   ├── models/
-│   │   ├── aasist_baseline.onnx      # Quantized anti-spoofing model
-│   │   ├── voiceguard_acoustic.onnx  # ONNX Acoustic Inference Model
-│   │   └── README.md                 # Model weights specification
-│   ├── samples/
-│   │   ├── genuine_voice.wav    # Pre-bundled genuine voice sample
-│   │   └── cloned_voice.wav     # Pre-bundled AI-cloned voice sample
-│   └── worklets/
-│       └── pcm-processor.js          # Standalone AudioWorkletProcessor module
-├── types/
-│   └── index.ts                 # Shared TypeScript interfaces (RiskResult, CallMetadata, AlertEvent, etc.)
-├── .idx/
-│   ├── dev.nix                  # Nix environment definition
-│   └── mcp.json                 # MCP server definitions (Firebase, Supabase, Vercel)
-├── blueprint.md                 # Project architecture & change history (This file)
-├── package.json                 # Project dependencies & scripts
-└── tsconfig.json                # TypeScript aliases and compiler flags
 ```
-
----
-
-## 4. Current Implementation Plan & Milestones
-
-1. **WebRTC Caller Screen (`app/demo/caller/page.tsx`)**:
-   - Create mobile-friendly dialer interface connecting over PeerJS.
-   - Allow choosing source: Live Mic or pre-loaded AI deepfake sample (`/samples/cloned_voice.wav`) or custom audio upload.
-   - Bridge sample audio to WebRTC via `AudioContext.createMediaStreamDestination()`.
-   - Provide dial/hangup controls, room code sharing, and outgoing audio waveform.
-
-2. **WebRTC Receiver Screen (`app/demo/receiver/page.tsx`)**:
-   - Host the PeerJS room (`VG-9088` default or custom).
-   - On inbound call, receive remote WebRTC `MediaStream`.
-   - Route stream into `StreamingDetector` & `StreamingRiskScorer`.
-   - Display real-time `RiskGauge`, `RiskTimeline`, `ConfidenceBreakdown`, and mid-stream alert banner on judge's laptop.
-
-3. **Navigation & Mode Selector**:
-   - Add clear tabs on `/demo` allowing users to toggle between Single-Device Simulator, WebRTC Caller, and WebRTC Receiver.
-   - Verify TypeScript compilation and ESLint across all routes.
-
-4. **Call Guard Monitor (`/monitor`) — COMPLETED**:
-   - New `app/monitor/page.tsx`: A dedicated "Receive & Auto-Scan" page.
-   - User presses "Start Listening" → a PeerJS room opens on a random room code (e.g. `VG-X4R2`).
-   - Share the code with any caller. When the caller dials in (via `/demo/caller`), the call is **auto-answered** with no user interaction needed.
-   - The moment the WebRTC stream arrives, `StreamingDetector` starts PCM analysis; `StreamingRiskScorer` (EMA α=0.35) evaluates every ~1.5s window.
-   - **Big Verdict Display** updates live: `SCANNING → REAL HUMAN / SUSPICIOUS / AI CLONE` with distinct color themes (emerald / amber / red) and icon.
-   - Risk score bar, Confidence % + Windows analyzed + Latency stats panel.
-   - Live 40-bar waveform colored by verdict.
-   - `ConfidenceBreakdown` and `RiskTimeline` appear once analysis windows accumulate.
-   - Mid-stream alert banners fire on threshold crossings. Session alerts log at bottom.
-   - Navbar updated: added "Call Guard" link with green active state glow.
-   - Caller page sub-nav updated to include Monitor link.
-
----
-
-## Current Change: fix/aasist-softmax-logits (branch)
-
-### Problem Fixed
-`StreamingDetector.evaluateWindow()` and `OnnxInferenceManager.analyzeAudioFrame()` both contained the incorrect formula:
-```ts
-riskScore = Math.round(outputData[0] * 100);  // WRONG
-```
-This was wrong for two reasons:
-1. **Index semantics**: AASIST logit index 0 = spoof-leaning, index 1 = bonafide-leaning (per export notebook convention). Only index 0 was being read.
-2. **Unbounded logits**: Raw logits are NOT probabilities. A logit of 2.5 would produce `riskScore = 250`, and a logit of -3.0 would produce `riskScore = -300`.
-
-### Fix Applied
-Numerically-stable softmax applied across both logits in both locations:
-```ts
-const maxLogit = Math.max(outputData[0], outputData[1]);
-const exp0 = Math.exp(outputData[0] - maxLogit); // spoof
-const exp1 = Math.exp(outputData[1] - maxLogit); // bonafide
-const spoofProb = exp0 / (exp0 + exp1);          // P(spoof) ∈ [0, 1]
-riskScore = Math.round(Math.min(100, Math.max(0, spoofProb * 100)));
-```
-
-### Test Infrastructure Added
-- **`jest` + `ts-jest` + `@types/jest`** installed as dev dependencies.
-- **`jest.config.js`** added at project root.
-- **`"test": "jest --config jest.config.js"`** added to `package.json` scripts.
-- **`lib/__tests__/onnx-softmax.test.ts`** — full test suite covering:
-  - Softmax math contract (integer output, [0,100] range, probability simplex)
-  - Equal logit symmetry → risk score 50
-  - Extreme logit gap → clamps to 0 / 100
-  - WAV fixture ordering: `genuine_voice.wav` risk score < `cloned_voice.wav` risk score with dev-mode loud `console.error` assertion
-  - Regression guard: old formula would have produced 250 and -300 for real logit values

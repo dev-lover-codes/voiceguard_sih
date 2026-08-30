@@ -154,7 +154,7 @@ export class StreamingDetector {
   private readonly windowSize: number = 64600; // 4.0375s at 16kHz (native model window)
   private readonly hopSize: number = 24000;    // 1.5s hop at 16kHz
   private windowStartMs: number = 0;
-  private scoreCallbacks: Set<(result: WindowRiskResult) => void> = new Set();
+  private scoreCallbacks: Set<(result: WindowRiskResult, pcmWindow?: Float32Array) => void> = new Set();
   private isRunning: boolean = false;
 
   /**
@@ -314,14 +314,14 @@ export class StreamingDetector {
       inferenceLatencyMs,
     };
 
-    // Notify registered listeners
-    this.scoreCallbacks.forEach((cb) => cb(result));
+    // Notify registered listeners with WindowRiskResult and raw PCM window for prosody analysis
+    this.scoreCallbacks.forEach((cb) => cb(result, windowSamples));
   }
 
   /**
-   * Registers a callback that receives a fresh RiskResult every ~1.5s hop
+   * Registers a callback that receives a fresh RiskResult and raw PCM window every ~1.5s hop
    */
-  public onScore(callback: (result: WindowRiskResult) => void): () => void {
+  public onScore(callback: (result: WindowRiskResult, pcmWindow?: Float32Array) => void): () => void {
     this.scoreCallbacks.add(callback);
     return () => {
       this.scoreCallbacks.delete(callback);

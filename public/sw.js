@@ -11,8 +11,6 @@ const PRECACHE_ASSETS = [
   '/',
   '/demo',
   '/dashboard',
-  '/demo/caller',
-  '/demo/receiver',
   '/manifest.json',
   '/icons/icon.svg',
   '/icons/icon-192x192.png',

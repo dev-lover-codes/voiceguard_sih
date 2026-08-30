@@ -190,12 +190,20 @@ export function computeCompositeRisk(
 ): RiskResult {
   const start = performance.now();
 
+  // If prosodyPhaseArtifacts is provided (>= 0) and biometricMismatch is 0,
+  // fold the prosody artifact score into the biometric/prosodic anomaly factor (15% weight)
+  const effectiveBiometricAnomaly = biometricMismatch > 0
+    ? biometricMismatch
+    : prosodyPhaseArtifacts >= 0
+    ? prosodyPhaseArtifacts
+    : 0;
+
   // Weighted Multi-Factor Formula
-  // 45% Acoustic Deepfake Prob + 25% Urgency/NLP + 15% Biometric Mismatch + 15% Network/Signaling Anomaly
+  // 45% Acoustic Deepfake Prob + 25% Urgency/NLP + 15% Biometric/Prosodic Mismatch + 15% Network/Signaling Anomaly
   const weightedScore =
     acousticSpoofProb * 0.45 +
     urgencyScore * 0.25 +
-    biometricMismatch * 0.15 +
+    effectiveBiometricAnomaly * 0.15 +
     metadataAnomaly * 0.15;
 
   const finalScore = Math.round(Math.min(100, Math.max(0, weightedScore)));

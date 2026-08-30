@@ -23,21 +23,30 @@ import {
 import { StreamingDetector, WindowRiskResult } from '@/lib/onnx-inference';
 import { StreamingRiskScorer, SmoothedRiskEvaluation, computeCompositeRisk, evaluateKeywords } from '@/lib/risk-scoring';
 import { computePhaseArtifactsScore } from '@/lib/prosody-analysis';
+import {
+  isSpeechRecognitionSupported,
+  createSpeechRecognizer,
+  SpeechRecognizerController,
+} from '@/lib/speech-recognition';
 import { ThrottledRiskLogger } from '@/lib/supabase-client';
 import { AlertEvent } from '@/types';
 import { formatTime } from '@/lib/utils';
 
 export interface LiveCallMonitorProps {
+  initialSource?: 'mic' | 'sample';
+  hideSourceToggle?: boolean;
   onScoreUpdate?: (result: WindowRiskResult, evalResult: SmoothedRiskEvaluation) => void;
   onAlertTriggered?: (alert: AlertEvent) => void;
 }
 
 export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
+  initialSource,
+  hideSourceToggle,
   onScoreUpdate,
   onAlertTriggered,
 }) => {
   // Source State: 'mic' | 'sample'
-  const [selectedSource, setSelectedSource] = useState<'mic' | 'sample'>('sample');
+  const [selectedSource, setSelectedSource] = useState<'mic' | 'sample'>(initialSource || 'sample');
   const [sampleUrl, setSampleUrl] = useState<string>('/samples/cloned_voice.wav');
   const [sampleName, setSampleName] = useState<string>('AI-Cloned Voice (High-Risk Deepfake)');
   const [isMonitoring, setIsMonitoring] = useState<boolean>(false);
@@ -54,8 +63,53 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
   const [urgencyScore, setUrgencyScore] = useState<number>(0);
   const [prosodyScore, setProsodyScore] = useState<number>(50); // 50 = neutral until first window
 
+  // Web Speech API STT State
+  const [isSttActive, setIsSttActive] = useState<boolean>(false);
+  const [isSttSupported] = useState<boolean>(() => isSpeechRecognitionSupported());
+  const recognizerRef = useRef<SpeechRecognizerController | null>(null);
+
   // Holds the most recent 64,600-sample PCM window for prosody analysis
   const lastPcmWindowRef = useRef<Float32Array | null>(null);
+  const transcriptRef = useRef<string>('');
+
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
+
+  useEffect(() => {
+    if (!isSttSupported) return;
+
+    const recognizer = createSpeechRecognizer({
+      onTranscript: (text: string) => {
+        setTranscript(text);
+        transcriptRef.current = text;
+        const kw = evaluateKeywords(text);
+        setFlaggedKeywords(kw.flagged);
+        setUrgencyScore(kw.urgencyScore);
+      },
+      onStateChange: (listening: boolean) => {
+        setIsSttActive(listening);
+      },
+    });
+
+    recognizerRef.current = recognizer;
+
+    return () => {
+      recognizer.stop();
+      recognizerRef.current = null;
+    };
+  }, [isSttSupported]);
+
+  const toggleStt = () => {
+    if (!recognizerRef.current) return;
+    if (isSttActive) {
+      recognizerRef.current.stop();
+      setIsSttActive(false);
+    } else {
+      recognizerRef.current.start();
+      setIsSttActive(true);
+    }
+  };
 
   // Unified Pipeline Refs
   const detectorRef = useRef<StreamingDetector | null>(null);
@@ -151,6 +205,11 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
       audioElementRef.current.pause();
     }
 
+    if (recognizerRef.current) {
+      recognizerRef.current.stop();
+      setIsSttActive(false);
+    }
+
     if (loggerRef.current) {
       loggerRef.current.flush(currentSmoothed, 0.90, currentTier === 'HIGH_RISK' ? 'synthetic' : 'human');
     }
@@ -196,7 +255,7 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
         }
 
         // --- Keyword urgency score from transcript (updated live as user types) ---
-        const kwResult = evaluateKeywords(transcript);
+        const kwResult = evaluateKeywords(transcriptRef.current);
         const currentUrgency = kwResult.urgencyScore;
 
         // --- Composite multi-factor risk score ---
@@ -409,47 +468,50 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
 
       {/* Unified Source Picker & Pre-loaded Fallbacks */}
       <div className="p-4 bg-slate-950/50 border-b border-slate-800/80 flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            Audio Source (Unified Worklet Pipeline):
-          </span>
+        {!hideSourceToggle && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+              Audio Source (Unified Worklet Pipeline):
+            </span>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setSelectedSource('mic');
-                if (isMonitoring) void stopMonitoring();
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                selectedSource === 'mic'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-md'
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'
-              }`}
-            >
-              <Mic className="w-3.5 h-3.5" />
-              <span>Live mic (incoming call)</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setSelectedSource('mic');
+                  if (isMonitoring) void stopMonitoring();
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                  selectedSource === 'mic'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'
+                }`}
+              >
+                <Mic className="w-3.5 h-3.5" />
+                <span>Live mic (incoming call)</span>
+              </button>
 
-            <button
-              onClick={() => {
-                setSelectedSource('sample');
-                if (isMonitoring) void stopMonitoring();
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                selectedSource === 'sample'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-md'
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'
-              }`}
-            >
-              <Volume2 className="w-3.5 h-3.5" />
-              <span>Play a sample call</span>
-            </button>
+              <button
+                onClick={() => {
+                  setSelectedSource('sample');
+                  if (isMonitoring) void stopMonitoring();
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                  selectedSource === 'sample'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'
+                }`}
+              >
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>Play a sample call</span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Pre-loaded Sample Buttons & Upload (Fallback for judging sessions) */}
-        <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+        {/* Pre-loaded Sample Buttons & Upload (Available when in sample mode) */}
+        {selectedSource === 'sample' && (
+          <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
           <span className="text-slate-400 font-mono text-[11px]">Quick Pre-loaded Samples:</span>
           
           <button
@@ -488,7 +550,8 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
             />
           </label>
         </div>
-      </div>
+      )}
+    </div>
 
       {/* Real-Time Waveform Visualizer */}
       <div className="p-5 bg-gradient-to-b from-slate-950/40 to-slate-900/60 border-b border-slate-800/80">
@@ -560,12 +623,35 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
 
       {/* ── Call Notes / Transcript Panel ─────────────────────────────────── */}
       {/* Feeds evaluateKeywords() for live NLP urgency scoring.              */}
-      {/* Real speech-to-text integration can replace manual entry in v2.     */}
       <div className="p-4 border-t border-slate-800/70 bg-slate-950/60 space-y-3">
-        <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-          <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Call Notes / Transcript</span>
-          <span className="text-slate-500 font-normal">(NLP keyword matching — paste or type call content)</span>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+            <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Call Notes / Transcript</span>
+            <span className="text-slate-500 font-normal hidden sm:inline">(NLP keyword matching — live voice STT or manual notes)</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isSttSupported ? (
+              <button
+                type="button"
+                onClick={toggleStt}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all ${
+                  isSttActive
+                    ? 'bg-red-950/80 text-red-300 border border-red-500/60 shadow-[0_0_10px_rgba(239,68,68,0.3)] animate-pulse'
+                    : 'bg-slate-800 text-slate-300 hover:text-white border border-slate-700'
+                }`}
+                title={isSttActive ? 'Stop Live Browser Speech-to-Text' : 'Enable Live Browser Speech-to-Text'}
+              >
+                <Mic className={`w-3 h-3 ${isSttActive ? 'text-red-400' : 'text-cyan-400'}`} />
+                <span>{isSttActive ? 'Live STT: Listening...' : 'Enable Live STT (Mic)'}</span>
+              </button>
+            ) : (
+              <span className="text-[10px] font-mono text-slate-500 px-2 py-0.5 rounded bg-slate-900 border border-slate-800">
+                Browser STT unavailable (Manual Entry Active)
+              </span>
+            )}
+          </div>
         </div>
 
         <textarea
@@ -600,23 +686,6 @@ export const LiveCallMonitor: React.FC<LiveCallMonitorProps> = ({
           </div>
         )}
 
-        {/* Multi-Factor Score Breakdown strip */}
-        {isMonitoring && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-            {[
-              { label: 'Acoustic (ONNX)', value: currentSmoothed, color: 'text-cyan-400', desc: '45% weight' },
-              { label: 'Prosody / Phase', value: 100 - prosodyScore, color: 'text-violet-400', desc: '~15% via composite' },
-              { label: 'NLP Urgency', value: urgencyScore, color: 'text-amber-400', desc: '25% weight' },
-              { label: 'Composite Risk', value: compositeScore, color: currentTier === 'HIGH_RISK' ? 'text-red-400' : currentTier === 'SUSPICIOUS' ? 'text-amber-400' : 'text-emerald-400', desc: 'Final EMA input' },
-            ].map(({ label, value, color, desc }) => (
-              <div key={label} className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-center">
-                <div className={`text-base font-extrabold font-mono ${color}`}>{value}<span className="text-slate-600 text-xs">/100</span></div>
-                <div className="text-[10px] text-slate-400 mt-0.5">{label}</div>
-                <div className="text-[9px] text-slate-600 font-mono">{desc}</div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
       {/* ── end transcript panel ────────────────────────────────────────────── */}
     </div>

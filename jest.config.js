@@ -2,8 +2,12 @@
 const config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/$1',
+  },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
+      diagnostics: false,
       tsconfig: {
         module: 'commonjs',
         moduleResolution: 'node',
