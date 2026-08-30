@@ -122,3 +122,37 @@
    - Mid-stream alert banners fire on threshold crossings. Session alerts log at bottom.
    - Navbar updated: added "Call Guard" link with green active state glow.
    - Caller page sub-nav updated to include Monitor link.
+
+---
+
+## Current Change: fix/aasist-softmax-logits (branch)
+
+### Problem Fixed
+`StreamingDetector.evaluateWindow()` and `OnnxInferenceManager.analyzeAudioFrame()` both contained the incorrect formula:
+```ts
+riskScore = Math.round(outputData[0] * 100);  // WRONG
+```
+This was wrong for two reasons:
+1. **Index semantics**: AASIST logit index 0 = spoof-leaning, index 1 = bonafide-leaning (per export notebook convention). Only index 0 was being read.
+2. **Unbounded logits**: Raw logits are NOT probabilities. A logit of 2.5 would produce `riskScore = 250`, and a logit of -3.0 would produce `riskScore = -300`.
+
+### Fix Applied
+Numerically-stable softmax applied across both logits in both locations:
+```ts
+const maxLogit = Math.max(outputData[0], outputData[1]);
+const exp0 = Math.exp(outputData[0] - maxLogit); // spoof
+const exp1 = Math.exp(outputData[1] - maxLogit); // bonafide
+const spoofProb = exp0 / (exp0 + exp1);          // P(spoof) ∈ [0, 1]
+riskScore = Math.round(Math.min(100, Math.max(0, spoofProb * 100)));
+```
+
+### Test Infrastructure Added
+- **`jest` + `ts-jest` + `@types/jest`** installed as dev dependencies.
+- **`jest.config.js`** added at project root.
+- **`"test": "jest --config jest.config.js"`** added to `package.json` scripts.
+- **`lib/__tests__/onnx-softmax.test.ts`** — full test suite covering:
+  - Softmax math contract (integer output, [0,100] range, probability simplex)
+  - Equal logit symmetry → risk score 50
+  - Extreme logit gap → clamps to 0 / 100
+  - WAV fixture ordering: `genuine_voice.wav` risk score < `cloned_voice.wav` risk score with dev-mode loud `console.error` assertion
+  - Regression guard: old formula would have produced 250 and -300 for real logit values

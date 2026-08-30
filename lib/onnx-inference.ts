@@ -230,8 +230,16 @@ export class StreamingDetector {
         const outputName = session.outputNames[0] || 'output_probabilities';
         const outputData = results[outputName]?.data;
 
-        if (outputData && outputData.length > 0) {
-          riskScore = Math.round(outputData[0] * 100);
+        if (outputData && outputData.length >= 2) {
+          // AASIST exports a 2-element logit vector:
+          //   outputData[0] = spoof-leaning logit
+          //   outputData[1] = bonafide-leaning logit
+          // Apply numerically-stable softmax so the result is a true probability.
+          const maxLogit = Math.max(outputData[0], outputData[1]);
+          const exp0 = Math.exp(outputData[0] - maxLogit); // spoof
+          const exp1 = Math.exp(outputData[1] - maxLogit); // bonafide
+          const spoofProb = exp0 / (exp0 + exp1);          // P(spoof)
+          riskScore = Math.round(Math.min(100, Math.max(0, spoofProb * 100)));
         } else {
           riskScore = this.computeStatisticalHeuristics(windowSamples);
         }
@@ -376,9 +384,19 @@ class OnnxInferenceManager {
         const outputName = session.outputNames[0] || 'output_probabilities';
         const outputData = results[outputName]?.data;
 
-        const spoofProb = outputData && outputData.length > 0
-          ? Math.round(outputData[0] * 100)
-          : this.computeStatisticalHeuristics(frameData);
+        // AASIST exports a 2-element logit vector:
+        //   outputData[0] = spoof-leaning logit
+        //   outputData[1] = bonafide-leaning logit
+        // Apply numerically-stable softmax so the result is a true probability.
+        let spoofProb: number;
+        if (outputData && outputData.length >= 2) {
+          const maxLogit = Math.max(outputData[0], outputData[1]);
+          const exp0 = Math.exp(outputData[0] - maxLogit); // spoof
+          const exp1 = Math.exp(outputData[1] - maxLogit); // bonafide
+          spoofProb = Math.round(Math.min(100, Math.max(0, (exp0 / (exp0 + exp1)) * 100)));
+        } else {
+          spoofProb = this.computeStatisticalHeuristics(frameData);
+        }
 
         return {
           syntheticSpeechProb: spoofProb,
