@@ -3,9 +3,8 @@ import type { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   appId: 'com.voiceguard.sih',
   appName: 'VoiceGuard SIH',
-  webDir: 'public',
+  webDir: 'out',
   server: {
-    url: 'https://voiceguard-sih.vercel.app',
     androidScheme: 'https',
     cleartext: false,
   },
@@ -17,3 +16,4 @@ const config: CapacitorConfig = {
 };
 
 export default config;
+
