@@ -237,6 +237,12 @@ export default function CallerPage() {
           <span>💻 Receiver</span>
           <ExternalLink className="w-3 h-3" />
         </Link>
+        <Link
+          href="/monitor"
+          className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-emerald-300 flex items-center gap-1"
+        >
+          <span>🛡️ Monitor</span>
+        </Link>
       </div>
 
       {/* Main Caller Card */}

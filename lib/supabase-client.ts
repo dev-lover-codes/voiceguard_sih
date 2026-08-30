@@ -275,6 +275,7 @@ export async function getSecurityAlerts(): Promise<AlertEvent[]> {
   ];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function updateAlertStatus(_alertId: string, _status: 'active' | 'dismissed' | 'escalated'): Promise<boolean> {
   return true;
 }

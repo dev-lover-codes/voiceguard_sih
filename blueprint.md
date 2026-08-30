@@ -109,3 +109,16 @@
 3. **Navigation & Mode Selector**:
    - Add clear tabs on `/demo` allowing users to toggle between Single-Device Simulator, WebRTC Caller, and WebRTC Receiver.
    - Verify TypeScript compilation and ESLint across all routes.
+
+4. **Call Guard Monitor (`/monitor`) — COMPLETED**:
+   - New `app/monitor/page.tsx`: A dedicated "Receive & Auto-Scan" page.
+   - User presses "Start Listening" → a PeerJS room opens on a random room code (e.g. `VG-X4R2`).
+   - Share the code with any caller. When the caller dials in (via `/demo/caller`), the call is **auto-answered** with no user interaction needed.
+   - The moment the WebRTC stream arrives, `StreamingDetector` starts PCM analysis; `StreamingRiskScorer` (EMA α=0.35) evaluates every ~1.5s window.
+   - **Big Verdict Display** updates live: `SCANNING → REAL HUMAN / SUSPICIOUS / AI CLONE` with distinct color themes (emerald / amber / red) and icon.
+   - Risk score bar, Confidence % + Windows analyzed + Latency stats panel.
+   - Live 40-bar waveform colored by verdict.
+   - `ConfidenceBreakdown` and `RiskTimeline` appear once analysis windows accumulate.
+   - Mid-stream alert banners fire on threshold crossings. Session alerts log at bottom.
+   - Navbar updated: added "Call Guard" link with green active state glow.
+   - Caller page sub-nav updated to include Monitor link.

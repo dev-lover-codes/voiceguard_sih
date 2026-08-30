@@ -10,6 +10,7 @@ import {
   Home,
   Download,
   Cpu,
+  PhoneIncoming,
 } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -44,7 +45,8 @@ export const Navbar: React.FC = () => {
   const navLinks = [
     { href: '/', label: 'Overview', icon: <Home className="w-4 h-4" /> },
     { href: '/dashboard', label: 'SOC Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
-    { href: '/demo', label: 'Live Deepfake Simulator', icon: <PlayCircle className="w-4 h-4" /> },
+    { href: '/demo', label: 'Live Simulator', icon: <PlayCircle className="w-4 h-4" /> },
+    { href: '/monitor', label: 'Call Guard', icon: <PhoneIncoming className="w-4 h-4 text-emerald-400" /> },
   ];
 
   return (
@@ -75,14 +77,17 @@ export const Navbar: React.FC = () => {
         {/* Navigation Tabs */}
         <nav className="hidden md:flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/90 border border-slate-800">
           {navLinks.map((link) => {
-            const isActive = pathname === link.href;
+            const isActive = pathname === link.href || (link.href === '/monitor' && pathname?.startsWith('/monitor'));
+            const isCallGuard = link.href === '/monitor';
             return (
               <Link
                 key={link.href}
                 href={link.href}
                 className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   isActive
-                    ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.2)]'
+                    ? isCallGuard
+                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+                      : 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.2)]'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                 }`}
               >
